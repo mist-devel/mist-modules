@@ -22,12 +22,12 @@ interface and this internal clock are synchronized. However to make Quartus' job
 don't try to optimize paths between the SPI and the system clock domain. Also you have to define the incoming
 27 MHz and the SPI clocks. These lines in the .sdc file do that:
 
-'''
+```
 set sys_clk "your_system_clock"
 
 create_clock -name {clk_27} -period 37.037 -waveform { 0.000 18.500 } [get_ports {CLOCK_27[0]}]
 create_clock -name {SPI_SCK}  -period 41.666 -waveform { 20.8 41.666 } [get_ports {SPI_SCK}]
 set_clock_groups -asynchronous -group [get_clocks {SPI_SCK}] -group [get_clocks $sys_clk]
-'''
+```
 
 Replace "your_system_clock" with the name of the pll clock, like "pll|altpll_component|auto_generated|pll1|clk[0]".
