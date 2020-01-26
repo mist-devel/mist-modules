@@ -12,7 +12,11 @@ use IEEE.numeric_std.all;
 package mist is
 
 component user_io
-generic(STRLEN : integer := 0 );
+generic(
+	STRLEN : integer := 0;
+	PS2DIV : integer := 100;
+	ROM_DIRECT_UPLOAD : integer := 0
+);
 port (
 	clk_sys           : in std_logic;
 	clk_sd            : in std_logic := '0';
