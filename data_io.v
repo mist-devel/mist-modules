@@ -30,7 +30,7 @@ module data_io
 	input             SPI_DI,
 	input             SPI_DO, // yes, SPI_DO is input when SS4 active
 
-	input             clkref, // assert ioctl_wr one cycle after clkref stobe
+	input             clkref_n, // assert ioctl_wr one cycle after clkref stobe (negative active)
 
 	// ARM -> FPGA download
 	output reg        ioctl_download = 0, // signal indicating an active download
@@ -146,7 +146,7 @@ always@(posedge clk_sys) begin
 
 	ioctl_download <= downloading_reg;
 
-	if (clkref) begin
+	if (~clkref_n) begin
 		wr_int <= 0;
 		wr_int_direct <= 0;
 		if (wr_int || wr_int_direct) begin
