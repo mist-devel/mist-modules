@@ -41,11 +41,12 @@ module data_io
 );
 
 parameter START_ADDR = 25'd0;
+parameter ROM_DIRECT_UPLOAD = 0;
 
 ///////////////////////////////   DOWNLOADING   ///////////////////////////////
 
 reg  [7:0] data_w;
-reg  [7:0] data_w2;
+reg  [7:0] data_w2  = 0;
 reg        rclk   = 0;
 reg        rclk2  = 0;
 reg        addr_reset = 0;
@@ -99,7 +100,10 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin
 	end
 end
 
+
 // direct SD Card->FPGA transfer
+generate if (ROM_DIRECT_UPLOAD == 1) begin
+
 always@(posedge SPI_SCK, posedge SPI_SS4) begin
 	reg  [6:0] sbuf2;
 	reg  [2:0] cnt2;
@@ -129,6 +133,9 @@ always@(posedge SPI_SCK, posedge SPI_SS4) begin
 		end
 	end
 end
+
+end
+endgenerate
 
 always@(posedge clk_sys) begin
 	// bring flags from spi clock domain into core clock domain
