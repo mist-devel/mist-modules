@@ -151,7 +151,7 @@ always@(posedge clk_sys) begin
 
 	ioctl_wr <= 0;
 
-	ioctl_download <= downloading_reg;
+	if (!downloading_reg) ioctl_download <= 0;
 
 	if (~clkref_n) begin
 		wr_int <= 0;
@@ -168,6 +168,7 @@ always@(posedge clk_sys) begin
 	if(addr_resetD ^ addr_resetD2) begin
 		addr <= START_ADDR;
 		ioctl_index <= index_reg;
+		ioctl_download <= 1;
 	end
 
 	// detect new byte from the SPI receiver
