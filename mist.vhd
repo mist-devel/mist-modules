@@ -76,7 +76,8 @@ generic (
 	OSD_X_OFFSET : std_logic_vector(9 downto 0) := (others => '0');
 	OSD_Y_OFFSET : std_logic_vector(9 downto 0) := (others => '0');
 	SD_HCNT_WIDTH: integer := 9;
-	COLOR_DEPTH  : integer := 6
+	COLOR_DEPTH  : integer := 6;
+	OSD_AUTO_CE  : boolean := true
 );
 port (
 	clk_sys     : in std_logic;
