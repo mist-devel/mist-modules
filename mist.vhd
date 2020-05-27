@@ -15,7 +15,7 @@ component user_io
 generic(
 	STRLEN : integer := 0;
 	PS2DIV : integer := 100;
-	ROM_DIRECT_UPLOAD : integer := 0
+	ROM_DIRECT_UPLOAD : boolean := false
 );
 port (
 	clk_sys           : in std_logic;
@@ -77,7 +77,8 @@ generic (
 	OSD_Y_OFFSET : std_logic_vector(9 downto 0) := (others => '0');
 	SD_HCNT_WIDTH: integer := 9;
 	COLOR_DEPTH  : integer := 6;
-	OSD_AUTO_CE  : boolean := true
+	OSD_AUTO_CE  : boolean := true;
+	SYNC_AND     : boolean := false
 );
 port (
 	clk_sys     : in std_logic;
