@@ -155,13 +155,15 @@ always @(posedge clk_sys) begin
 		// falling edge of VSync
 		if(!VSync && vsD) begin
 			v_cnt <= 0;
-			vs_high <= v_cnt;
+			// if the difference is only one line, that might be interlaced picture
+			if (vs_high != v_cnt + 1'd1) vs_high <= v_cnt;
 		end
 
 		// rising edge of VSync
 		else if(VSync && !vsD) begin
 			v_cnt <= 0;
-			vs_low <= v_cnt;
+			// if the difference is only one line, that might be interlaced picture
+			if (vs_low != v_cnt + 1'd1) vs_low <= v_cnt;
 		end
 	end
 end
