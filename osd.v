@@ -102,8 +102,8 @@ wire doublescan = (dsp_height>350);
 reg auto_ce_pix;
 always @(posedge clk_sys) begin
 	reg [15:0] cnt = 0;
-	reg  [1:0] pixsz;
-	reg  [1:0] pixcnt;
+	reg  [2:0] pixsz;
+	reg  [2:0] pixcnt;
 	reg        hs;
 
 	cnt <= cnt + 1'd1;
@@ -118,7 +118,9 @@ always @(posedge clk_sys) begin
 		if(cnt <= OSD_WIDTH_PADDED * 2) pixsz <= 0;
 		else if(cnt <= OSD_WIDTH_PADDED * 3) pixsz <= 1;
 		else if(cnt <= OSD_WIDTH_PADDED * 4) pixsz <= 2;
-		else pixsz <= 3;
+		else if(cnt <= OSD_WIDTH_PADDED * 5) pixsz <= 3;
+		else if(cnt <= OSD_WIDTH_PADDED * 6) pixsz <= 4;
+		else pixsz <= 5;
 
 		pixcnt <= 0;
 		auto_ce_pix <= 1;
