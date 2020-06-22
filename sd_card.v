@@ -255,7 +255,7 @@ always@(posedge clk_sys) begin
                     if (terminate_cmd) begin
                         read_state <= RD_STATE_IDLE;
                         cmd <= 0;
-					end else begin
+                    end else begin
                         sd_lba <= sd_lba + 1'd1;
                         sd_rd <= 1;
                         sd_busy <= 1;
@@ -316,9 +316,6 @@ always@(posedge clk_sys) begin
                     terminate_cmd <= 1;
                 end else
                     cmd <= { sbuf, sd_sdi};
-
-                // set cmd55 flag if previous command was 55
-                cmd55 <= (cmd == 8'h77);
             end
 
             // parse additional command bytes
@@ -334,6 +331,7 @@ always@(posedge clk_sys) begin
                 // default:
                 reply <= 8'h04;     // illegal command
                 reply_len <= 4'd0;  // no extra reply bytes
+                cmd55 <= 0;
 
                 // CMD0: GO_IDLE_STATE
                 if(cmd == 8'h40) begin
@@ -393,7 +391,10 @@ always@(posedge clk_sys) begin
                     end
 
                     // CMD55: APP_COND
-                    8'h77: reply <= 8'h01;    // ok, busy
+                    8'h77: begin
+                        reply <= 8'h01;    // ok, busy
+                        cmd55 <= 1;
+                    end
 
                     // CMD58: READ_OCR
                     8'h7a: begin
