@@ -82,8 +82,10 @@ module user_io #(parameter STRLEN=0, parameter PS2DIV=100, parameter ROM_DIRECT_
 	// mouse data
 	output reg    [8:0] mouse_x,
 	output reg    [8:0] mouse_y,
+	output reg    [3:0] mouse_z,
 	output reg    [7:0] mouse_flags,  // YOvfl, XOvfl, dy8, dx8, 1, mbtn, rbtn, lbtn
 	output reg          mouse_strobe, // mouse data is valid on mouse_strobe
+	output reg          mouse_idx,    // which mouse?
 
 	// serial com port
 	input [7:0]         serial_data,
@@ -403,6 +405,7 @@ always @(posedge clk_sys) begin : cmd_block
 
 	reg [7:0] mouse_flags_r;
 	reg [7:0] mouse_x_r;
+	reg [7:0] mouse_y_r;
 
 	reg       key_pressed_r;
 	reg       key_extended_r;
@@ -434,17 +437,23 @@ always @(posedge clk_sys) begin : cmd_block
 				8'h62: if (abyte_cnt < 5) joystick_2[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
 				8'h63: if (abyte_cnt < 5) joystick_3[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
 				8'h64: if (abyte_cnt < 5) joystick_4[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
-				8'h04: begin
-					// store incoming ps2 mouse bytes 
-					ps2_mouse_fifo[ps2_mouse_wptr] <= spi_byte_in;
-					ps2_mouse_wptr <= ps2_mouse_wptr + 1'd1;
+				8'h70,8'h71: begin
+					// store incoming ps2 mouse bytes
+					if (abyte_cnt < 4) begin
+						ps2_mouse_fifo[ps2_mouse_wptr] <= spi_byte_in;
+						ps2_mouse_wptr <= ps2_mouse_wptr + 1'd1;
+					end
+
 					if (abyte_cnt == 1) mouse_flags_r <= spi_byte_in;
 					else if (abyte_cnt == 2) mouse_x_r <= spi_byte_in;
-					else if (abyte_cnt == 3) begin
+					else if (abyte_cnt == 3) mouse_y_r <= spi_byte_in;
+					else if (abyte_cnt == 4) begin
 						// flags: YOvfl, XOvfl, dy8, dx8, 1, mbtn, rbtn, lbtn
 						mouse_flags <= mouse_flags_r;
 						mouse_x <= { mouse_flags_r[4], mouse_x_r };
-						mouse_y <= { mouse_flags_r[5], spi_byte_in };
+						mouse_y <= { mouse_flags_r[5], mouse_y_r };
+						mouse_z <= spi_byte_in[3:0];
+						mouse_idx <= acmd[0];
 						mouse_strobe <= 1;
 					end
 				end

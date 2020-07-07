@@ -65,8 +65,10 @@ port (
 	ps2_mouse_data    : out std_logic;
 	mouse_x           : out signed(8 downto 0);
 	mouse_y           : out signed(8 downto 0);
+	mouse_z           : out signed(3 downto 0);
 	mouse_flags       : out std_logic_vector(7 downto 0); -- YOvfl, XOvfl, dy8, dx8, 1, mbtn, rbtn, lbtn
-	mouse_strobe      : out std_logic
+	mouse_strobe      : out std_logic;
+	mouse_idx         : out std_logic
 );
 end component user_io;
 
