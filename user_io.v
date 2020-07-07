@@ -459,7 +459,7 @@ always @(posedge clk_sys) begin : cmd_block
 					if (spi_byte_in == 8'he0) key_extended_r <= 1'b1;
 					else if (spi_byte_in == 8'hf0) key_pressed_r <= 1'b0;
 					else begin
-						key_extended <= key_extended_r;
+						key_extended <= key_extended_r && abyte_cnt != 1;
 						key_pressed <= key_pressed_r || abyte_cnt == 1;
 						key_code <= spi_byte_in;
 						key_strobe <= 1'b1;
