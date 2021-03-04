@@ -364,6 +364,13 @@ always@(posedge clk_sys) begin
                     // CMD10: SEND_CID
                     8'h4a: reply <= 8'h00;    // ok
 
+                    // CMD13: SEND_STATUS
+                    8'h4d: begin
+                      reply <= 8'h00;    // ok
+                      reply0 <=8'h00;
+                      reply_len <= 4'd1;
+                    end
+
                     // CMD16: SET_BLOCKLEN
                     8'h50:
                         // we only support a block size of 512
