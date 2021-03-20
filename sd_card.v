@@ -240,7 +240,7 @@ always@(posedge clk_sys) begin
 
         // send data
         RD_STATE_SEND_DATA: begin
-            if(cmd == 8'h51 || cmd == 8'h52)        // CMD17: READ_SINGLE_BLOCK, CMD18: READ_MULTIPLE_BLOCK
+            if(cmd == 8'h51 || (cmd == 8'h52 && !terminate_cmd)) // CMD17: READ_SINGLE_BLOCK, CMD18: READ_MULTIPLE_BLOCK
                 sd_sdo <= buffer_dout[~bit_cnt];
             else if(cmd == 8'h49 || cmd == 8'h4a)   // CMD9: SEND_CSD, CMD10: SEND CID
                 sd_sdo <= conf_byte[~bit_cnt];
@@ -251,11 +251,11 @@ always@(posedge clk_sys) begin
                 if((cmd == 8'h51) && &buffer_ptr)
                     read_state <= RD_STATE_IDLE;   // next: send crc. It's ignored so return to idle state
 
-                if((cmd == 8'h52) && &buffer_ptr) begin
+                if (cmd == 8'h52) begin
                     if (terminate_cmd) begin
                         read_state <= RD_STATE_IDLE;
                         cmd <= 0;
-                    end else begin
+                    end else if (&buffer_ptr) begin
                         sd_lba <= sd_lba + 1'd1;
                         sd_rd <= 1;
                         sd_busy <= 1;
