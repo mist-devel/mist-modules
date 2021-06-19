@@ -15,7 +15,8 @@ component user_io
 generic(
 	STRLEN : integer := 0;
 	PS2DIV : integer := 100;
-	ROM_DIRECT_UPLOAD : boolean := false
+	ROM_DIRECT_UPLOAD : boolean := false;
+	SD_IMAGES: integer := 2;
 );
 port (
 	clk_sys           : in std_logic;
@@ -39,14 +40,14 @@ port (
 	core_mod          : out std_logic_vector(6 downto 0);
 
 	sd_lba            : in  std_logic_vector(31 downto 0) := (others => '0');
-	sd_rd             : in  std_logic_vector(1 downto 0) := (others => '0');
-	sd_wr             : in  std_logic_vector(1 downto 0) := (others => '0');
+	sd_rd             : in  std_logic_vector(SD_IMAGES-1 downto 0) := (others => '0');
+	sd_wr             : in  std_logic_vector(SD_IMAGES-1 downto 0) := (others => '0');
 	sd_ack            : out std_logic;
 	sd_ack_conf       : out std_logic;
 	sd_conf           : in  std_logic := '0';
 	sd_sdhc           : in  std_logic := '1';
-	img_size          : out std_logic_vector(31 downto 0);
-	img_mounted       : out std_logic_vector(1 downto 0);
+	img_size          : out std_logic_vector(63 downto 0);
+	img_mounted       : out std_logic_vector(SD_IMAGES-1 downto 0);
 
 	sd_buff_addr      : out std_logic_vector(8 downto 0);
 	sd_dout           : out std_logic_vector(7 downto 0);
