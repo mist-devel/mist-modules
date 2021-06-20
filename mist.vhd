@@ -16,7 +16,7 @@ generic(
 	STRLEN : integer := 0;
 	PS2DIV : integer := 100;
 	ROM_DIRECT_UPLOAD : boolean := false;
-	SD_IMAGES: integer := 2;
+	SD_IMAGES: integer := 2
 );
 port (
 	clk_sys           : in std_logic;
