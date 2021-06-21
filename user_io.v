@@ -602,7 +602,7 @@ always @(posedge clk_sd) begin : sd_block
 					end
 				end
 
-				8'h1c: img_mounted[spi_byte_in[0]] <= 1;
+				8'h1c: img_mounted[spi_byte_in[W:0]] <= 1;
 
 				// send image info
 				8'h1d: if(abyte_cnt<9) img_size[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
