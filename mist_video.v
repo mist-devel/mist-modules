@@ -149,7 +149,7 @@ osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE) osd
 wire [5:0] cofi_r, cofi_g, cofi_b;
 wire       cofi_hs, cofi_vs;
 
-cofi cofi (
+cofi #(6) cofi (
 	.clk     ( clk_sys ),
 	.pix_ce  ( scandoubler_disable ? ce_x1 : ce_x2 ),
 	.enable  ( blend   ),
