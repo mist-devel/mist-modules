@@ -125,7 +125,7 @@ reg [W:0] drive_sel;
 always begin
 	integer i;
 	drive_sel = 0;
-	for(i = 0; i < SD_IMAGES; i = i + 1) if(sd_rd[i] | sd_wr[i]) drive_sel = i;
+	for(i = 0; i < SD_IMAGES; i = i + 1) if(sd_rd[i] | sd_wr[i]) drive_sel = i[W:0];
 end
 
 // command byte read by the io controller
