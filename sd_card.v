@@ -152,7 +152,7 @@ always @(posedge clk_sys) begin
         // update card size in case of a virtual SD image
         if (sd_sdhc)
             // CSD V2.0 size = (c_size + 1) * 512K
-            csdcid[69:48] <= {9'd0, img_size[31:19] };
+            csdcid[69:48] <= {9'd0, img_size[31:19] } - 1'd1;
         else begin
             // CSD V1.0 no. of blocks = c_size ** (c_size_mult + 2)
             csdcid[49:47] <= 3'd7; //c_size_mult
@@ -310,6 +310,7 @@ always@(posedge clk_sys) begin
         terminate_cmd <= 0;
         cmd <= 0;
         read_state <= RD_STATE_IDLE;
+        reply_len <= 0;
     end else if (~old_sd_sck & sd_sck) begin
         bit_cnt <= bit_cnt + 3'd1;
 
@@ -325,7 +326,7 @@ always@(posedge clk_sys) begin
             // byte_cnt > 6 -> complete command received
             // first byte of valid command is 01xxxxxx
             // don't accept new commands (except STOP TRANSMISSION) once a write or read command has been accepted
-            if((byte_cnt > 5) && 
+            if((byte_cnt > (reply_len == 0 ? 5 : (5+NCR+reply_len))) && 
                (write_state == WR_STATE_IDLE) && 
                (read_state == RD_STATE_IDLE || (read_state != RD_STATE_IDLE && { sbuf, sd_sdi} == 8'h4c)) &&
                sbuf[6:5] == 2'b01)
@@ -433,6 +434,7 @@ always@(posedge clk_sys) begin
                         reply3 <= OCR[7:0];
                         reply_len <= 4'd4;
                     end
+
                     endcase
                 end
             end
