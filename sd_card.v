@@ -407,7 +407,8 @@ always@(posedge clk_sys) begin
                     8'h52: reply <= 8'h00;    // ok
 
                     // CMD24: WRITE_BLOCK
-                    8'h58: begin
+                    // CMD25: WRITE_MULTIPLE_BLOCKS
+                    8'h58, 8'h59: begin
                         reply <= 8'h00;    // ok
                         sd_lba <= sd_sdhc?args[39:8]:{9'd0, args[39:17]};
                         write_state <= WR_STATE_EXP_DTOKEN;  // expect data token
@@ -446,7 +447,12 @@ always@(posedge clk_sys) begin
 
             // waiting for data token
             WR_STATE_EXP_DTOKEN:
-            if({ sbuf, sd_sdi} == 8'hfe ) begin
+            if({ sbuf, sd_sdi} == 8'hfd && cmd == 8'h59) begin
+                // stop multiple write
+                write_state <= WR_STATE_IDLE;
+            end
+            else
+            if({ sbuf, sd_sdi} == ((cmd == 8'h59) ? 8'hfc : 8'hfe)) begin
                 write_state <= WR_STATE_RECV_DATA;
                 buffer_ptr <= 0;
                 sd_buff_sel <= 0;
@@ -474,14 +480,21 @@ always@(posedge clk_sys) begin
             // send data response
             WR_STATE_SEND_DRESP: begin
                 write_state <= WR_STATE_BUSY;
-                sd_wr <= 1;               // trigger write request to io ontroller
+                sd_wr <= 1;               // trigger write request to io controller
                 sd_busy <= 1;
             end
 
             // wait for io controller to accept data
             WR_STATE_BUSY:
-            if(~sd_busy)
-                write_state <= WR_STATE_IDLE;
+            if(~sd_busy) begin
+                if (cmd == 8'h58)
+                    write_state <= WR_STATE_IDLE;
+                else begin
+                    sd_lba <= sd_lba + 1'd1;
+                    sd_buff_sel <= !sd_buff_sel;
+                    write_state <= WR_STATE_EXP_DTOKEN;
+                end
+            end
 
             default: ;
             endcase
