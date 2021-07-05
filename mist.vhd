@@ -16,7 +16,8 @@ generic(
 	STRLEN : integer := 0;
 	PS2DIV : integer := 100;
 	ROM_DIRECT_UPLOAD : boolean := false;
-	SD_IMAGES: integer := 2
+	SD_IMAGES: integer := 2;
+	PS2BIDIR : boolean := false
 );
 port (
 	clk_sys           : in std_logic;
@@ -57,6 +58,8 @@ port (
 
 	ps2_kbd_clk       : out std_logic;
 	ps2_kbd_data      : out std_logic;
+	ps2_kbd_clk_i     : in  std_logic := '1';
+	ps2_kbd_data_i    : in  std_logic := '1';
 	key_pressed       : out std_logic;
 	key_extended      : out std_logic;
 	key_code          : out std_logic_vector(7 downto 0);
@@ -64,6 +67,8 @@ port (
 
 	ps2_mouse_clk     : out std_logic;
 	ps2_mouse_data    : out std_logic;
+	ps2_mouse_clk_i   : in  std_logic := '1';
+	ps2_mouse_data_i  : in  std_logic := '1';
 	mouse_x           : out signed(8 downto 0);
 	mouse_y           : out signed(8 downto 0);
 	mouse_z           : out signed(3 downto 0);

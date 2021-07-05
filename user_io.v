@@ -73,8 +73,12 @@ module user_io (
 	// ps2 keyboard/mouse emulation
 	output              ps2_kbd_clk,
 	output reg          ps2_kbd_data,
+	input               ps2_kbd_clk_i,
+	input               ps2_kbd_data_i,
 	output              ps2_mouse_clk,
 	output reg          ps2_mouse_data,
+	input               ps2_mouse_clk_i,
+	input               ps2_mouse_data_i,
 
 	// keyboard data
 	output reg          key_pressed,  // 1-make (pressed), 0-break (released)
@@ -99,6 +103,7 @@ parameter STRLEN=0; // config string length
 parameter PS2DIV=100; // master clock divider for psk2_kbd/mouse clk
 parameter ROM_DIRECT_UPLOAD=0; // direct upload used for file uploads from the ARM
 parameter SD_IMAGES=2; // number of block-access images (max. 4 supported in current firmware)
+parameter PS2BIDIR=0; // bi-directional PS2 interface
 
 localparam W = $clog2(SD_IMAGES);
 
@@ -157,14 +162,24 @@ reg [3:0] ps2_kbd_tx_state;
 reg [7:0] ps2_kbd_tx_byte;
 reg ps2_kbd_parity;
 
-assign ps2_kbd_clk = ps2_clk || (ps2_kbd_tx_state == 0);
+// ps2 receiver state machine
+reg [3:0] ps2_kbd_rx_state = 0;
+reg       ps2_kbd_rx_start = 0;
+reg [7:0] ps2_kbd_rx_byte;
+reg       ps2_kbd_rx_strobe;
+
+assign ps2_kbd_clk = ps2_clk || (ps2_kbd_tx_state == 0 && ps2_kbd_rx_state == 0);
 
 // ps2 transmitter
 // Takes a byte from the FIFO and sends it in a ps2 compliant serial format.
 reg ps2_kbd_r_inc;
-always@(posedge clk_sys) begin : ps2_kbd
-	reg ps2_clkD;
 
+always@(posedge clk_sys) begin : ps2_kbd
+
+	reg ps2_clkD;
+	reg ps2_clk_iD, ps2_dat_iD;
+
+	// send data
 	ps2_clkD <= ps2_clk;
 	if (~ps2_clkD & ps2_clk) begin
 		ps2_kbd_r_inc <= 1'b0;
@@ -174,8 +189,9 @@ always@(posedge clk_sys) begin : ps2_kbd
 
 		// transmitter is idle?
 		if(ps2_kbd_tx_state == 0) begin
+			ps2_kbd_data <= 1;
 			// data in fifo present?
-			if(ps2_kbd_wptr != ps2_kbd_rptr) begin
+			if(ps2_kbd_wptr != ps2_kbd_rptr && (ps2_kbd_clk_i | !PS2BIDIR)) begin
 				// load tx register from fifo
 				ps2_kbd_tx_byte <= ps2_kbd_fifo[ps2_kbd_rptr];
 				ps2_kbd_r_inc <= 1'b1;
@@ -214,6 +230,33 @@ always@(posedge clk_sys) begin : ps2_kbd
 				ps2_kbd_tx_state <= 4'd0;
 		end
 	end
+
+	ps2_clk_iD <= ps2_kbd_clk_i;
+	ps2_dat_iD <= ps2_kbd_data_i;
+
+	// receive command
+	// first: host pulls down the clock line
+	if (ps2_clk_iD & ~ps2_kbd_clk_i) ps2_kbd_rx_start <= 1;
+	if (ps2_kbd_clk_i) ps2_kbd_rx_start <= 0;
+	// second: host pulls down the data line, while releasing the clock
+	if (ps2_kbd_rx_start && ps2_dat_iD && !ps2_kbd_data_i) begin
+		ps2_kbd_rx_state <= 4'd1;
+		ps2_kbd_rx_start <= 0;
+	end
+
+	// host data is valid after the rising edge of the clock
+	if(ps2_kbd_rx_state != 0 && ~ps2_clkD && ps2_clk) begin
+		ps2_kbd_rx_state <= ps2_kbd_rx_state + 1'd1;
+		if (ps2_kbd_rx_state == 9) ;// parity
+		else if (ps2_kbd_rx_state == 10) begin
+			ps2_kbd_data <= 0; // ack the received byte
+		end else if (ps2_kbd_rx_state == 11) begin
+			ps2_kbd_rx_state <= 0;
+			ps2_kbd_rx_strobe <= ~ps2_kbd_rx_strobe;
+		end else begin
+			ps2_kbd_rx_byte <= {ps2_kbd_data_i, ps2_kbd_rx_byte[7:1]};
+		end
+	end
 end
 
 // mouse
@@ -226,13 +269,20 @@ reg [3:0] ps2_mouse_tx_state;
 reg [7:0] ps2_mouse_tx_byte;
 reg ps2_mouse_parity;
 
-assign ps2_mouse_clk = ps2_clk || (ps2_mouse_tx_state == 0);
+// ps2 receiver state machine
+reg [3:0] ps2_mouse_rx_state = 0;
+reg       ps2_mouse_rx_start = 0;
+reg [7:0] ps2_mouse_rx_byte;
+reg       ps2_mouse_rx_strobe;
+
+assign ps2_mouse_clk = ps2_clk || (ps2_mouse_tx_state == 0 && ps2_mouse_rx_state == 0);
 
 // ps2 transmitter
 // Takes a byte from the FIFO and sends it in a ps2 compliant serial format.
 reg ps2_mouse_r_inc;
 always@(posedge clk_sys) begin : ps2_mouse
 	reg ps2_clkD;
+	reg ps2_clk_iD, ps2_dat_iD;
 
 	ps2_clkD <= ps2_clk;
 	if (~ps2_clkD & ps2_clk) begin
@@ -243,8 +293,9 @@ always@(posedge clk_sys) begin : ps2_mouse
 
 		// transmitter is idle?
 		if(ps2_mouse_tx_state == 0) begin
+			ps2_mouse_data <= 1;
 			// data in fifo present?
-			if(ps2_mouse_wptr != ps2_mouse_rptr) begin
+			if(ps2_mouse_wptr != ps2_mouse_rptr && (ps2_mouse_clk_i | !PS2BIDIR)) begin
 				// load tx register from fifo
 				ps2_mouse_tx_byte <= ps2_mouse_fifo[ps2_mouse_rptr];
 				ps2_mouse_r_inc <= 1'b1;
@@ -281,6 +332,33 @@ always@(posedge clk_sys) begin : ps2_mouse
 				ps2_mouse_tx_state <= ps2_mouse_tx_state + 4'd1;
 			else	
 				ps2_mouse_tx_state <= 4'd0;
+		end
+	end
+
+	ps2_clk_iD <= ps2_mouse_clk_i;
+	ps2_dat_iD <= ps2_mouse_data_i;
+
+	// receive command
+	// first: host pulls down the clock line
+	if (ps2_clk_iD & ~ps2_mouse_clk_i) ps2_mouse_rx_start <= 1;
+	if (ps2_mouse_clk_i) ps2_mouse_rx_start <= 0;
+	// second: host pulls down the data line, while releasing the clock
+	if (ps2_mouse_rx_start && ps2_dat_iD && !ps2_mouse_data_i) begin
+		ps2_mouse_rx_state <= 4'd1;
+		ps2_mouse_rx_start <= 0;
+	end
+
+	// host data is valid after the rising edge of the clock
+	if(ps2_mouse_rx_state != 0 && ~ps2_clkD && ps2_clk) begin
+		ps2_mouse_rx_state <= ps2_mouse_rx_state + 1'd1;
+		if (ps2_mouse_rx_state == 9) ;// parity
+		else if (ps2_mouse_rx_state == 10) begin
+			ps2_mouse_data <= 0; // ack the received byte
+		end else if (ps2_mouse_rx_state == 11) begin
+			ps2_mouse_rx_state <= 0;
+			ps2_mouse_rx_strobe <= ~ps2_mouse_rx_strobe;
+		end else begin
+			ps2_mouse_rx_byte <= {ps2_mouse_data_i, ps2_mouse_rx_byte[7:1]};
 		end
 	end
 end
@@ -348,6 +426,8 @@ end
 always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 	reg [31:0] sd_lba_r;
 	reg  [W:0] drive_sel_r;
+	reg        ps2_kbd_rx_strobeD;
+	reg        ps2_mouse_rx_strobeD;
 
 	if(SPI_SS_IO == 1) begin
 		spi_byte_out <= core_type;
@@ -358,6 +438,20 @@ always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 
 			spi_byte_out <= 0;
 			case({(!byte_cnt) ? {sbuf, SPI_MOSI} : cmd})
+			// PS2 keyboard command
+			8'h0e: if (byte_cnt == 0) begin
+					ps2_kbd_rx_strobeD <= ps2_kbd_rx_strobe;
+					//echo the command code if there's a byte to send, indicating the core supports the command
+					spi_byte_out <= (ps2_kbd_rx_strobe ^ ps2_kbd_rx_strobeD) ? 8'h0e : 8'h00;
+				end else spi_byte_out <= ps2_kbd_rx_byte;
+
+			// PS2 mouse command
+			8'h0f: if (byte_cnt == 0) begin
+					ps2_mouse_rx_strobeD <= ps2_mouse_rx_strobe;
+					//echo the command code if there's a byte to send, indicating the core supports the command
+					spi_byte_out <= (ps2_mouse_rx_strobe ^ ps2_mouse_rx_strobeD) ? 8'h0f : 8'h00;
+				end else spi_byte_out <= ps2_mouse_rx_byte;
+
 			// reading config string
 			8'h14: if (STRLEN == 0) spi_byte_out <= conf_chr; else
 			       if(byte_cnt < STRLEN) spi_byte_out <= conf_str[(STRLEN - byte_cnt - 1)<<3 +:8];
