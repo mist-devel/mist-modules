@@ -143,7 +143,7 @@ wire spi_sck = SPI_CLK;
 localparam PS2_FIFO_BITS = 3;
 
 reg ps2_clk;
-always @(negedge clk_sys) begin
+always @(posedge clk_sys) begin
 	integer cnt;
 	cnt <= cnt + 1'd1;
 	if(cnt == PS2DIV) begin
@@ -164,20 +164,20 @@ reg ps2_kbd_parity;
 
 // ps2 receiver state machine
 reg [3:0] ps2_kbd_rx_state = 0;
-reg       ps2_kbd_rx_start = 0;
-reg [7:0] ps2_kbd_rx_byte;
-reg       ps2_kbd_rx_strobe;
+reg [1:0] ps2_kbd_rx_start = 0;
+reg [7:0] ps2_kbd_rx_byte = 0;
+reg       ps2_kbd_rx_strobe = 0;
 
 assign ps2_kbd_clk = ps2_clk || (ps2_kbd_tx_state == 0 && ps2_kbd_rx_state == 0);
 
-// ps2 transmitter
+// ps2 transmitter/receiver
 // Takes a byte from the FIFO and sends it in a ps2 compliant serial format.
-reg ps2_kbd_r_inc;
-
+// Sends a command to the IO controller if bidirectional mode is enabled.
 always@(posedge clk_sys) begin : ps2_kbd
 
 	reg ps2_clkD;
 	reg ps2_clk_iD, ps2_dat_iD;
+	reg ps2_kbd_r_inc;
 
 	// send data
 	ps2_clkD <= ps2_clk;
@@ -231,30 +231,40 @@ always@(posedge clk_sys) begin : ps2_kbd
 		end
 	end
 
-	ps2_clk_iD <= ps2_kbd_clk_i;
-	ps2_dat_iD <= ps2_kbd_data_i;
+	if (PS2BIDIR) begin
+		ps2_clk_iD <= ps2_kbd_clk_i;
+		ps2_dat_iD <= ps2_kbd_data_i;
 
-	// receive command
-	// first: host pulls down the clock line
-	if (ps2_clk_iD & ~ps2_kbd_clk_i) ps2_kbd_rx_start <= 1;
-	if (ps2_kbd_clk_i) ps2_kbd_rx_start <= 0;
-	// second: host pulls down the data line, while releasing the clock
-	if (ps2_kbd_rx_start && ps2_dat_iD && !ps2_kbd_data_i) begin
-		ps2_kbd_rx_state <= 4'd1;
-		ps2_kbd_rx_start <= 0;
-	end
+		// receive command
+		case (ps2_kbd_rx_start)
+		2'd0:
+			// first: host pulls down the clock line
+			if (ps2_clk_iD & ~ps2_kbd_clk_i) ps2_kbd_rx_start <= 1;
+		2'd1:
+			// second: host pulls down the data line, while releasing the clock
+			if (ps2_dat_iD && !ps2_kbd_data_i) ps2_kbd_rx_start <= 2'd2;
+			// if it releases the clock without pulling down the data line: goto 0
+			else if (ps2_kbd_clk_i) ps2_kbd_rx_start <= 0;
+		2'd2:
+			if (ps2_clkD && ~ps2_clk) begin
+				ps2_kbd_rx_state <= 4'd1;
+				ps2_kbd_rx_start <= 0;
+			end
+		default: ;
+		endcase
 
-	// host data is valid after the rising edge of the clock
-	if(ps2_kbd_rx_state != 0 && ~ps2_clkD && ps2_clk) begin
-		ps2_kbd_rx_state <= ps2_kbd_rx_state + 1'd1;
-		if (ps2_kbd_rx_state == 9) ;// parity
-		else if (ps2_kbd_rx_state == 10) begin
-			ps2_kbd_data <= 0; // ack the received byte
-		end else if (ps2_kbd_rx_state == 11) begin
-			ps2_kbd_rx_state <= 0;
-			ps2_kbd_rx_strobe <= ~ps2_kbd_rx_strobe;
-		end else begin
-			ps2_kbd_rx_byte <= {ps2_kbd_data_i, ps2_kbd_rx_byte[7:1]};
+		// host data is valid after the rising edge of the clock
+		if(ps2_kbd_rx_state != 0 && ~ps2_clkD && ps2_clk) begin
+			ps2_kbd_rx_state <= ps2_kbd_rx_state + 1'd1;
+			if (ps2_kbd_rx_state == 9) ;// parity
+			else if (ps2_kbd_rx_state == 10) begin
+				ps2_kbd_data <= 0; // ack the received byte
+			end else if (ps2_kbd_rx_state == 11) begin
+				ps2_kbd_rx_state <= 0;
+				ps2_kbd_rx_strobe <= ~ps2_kbd_rx_strobe;
+			end else begin
+				ps2_kbd_rx_byte <= {ps2_kbd_data_i, ps2_kbd_rx_byte[7:1]};
+			end
 		end
 	end
 end
@@ -271,18 +281,19 @@ reg ps2_mouse_parity;
 
 // ps2 receiver state machine
 reg [3:0] ps2_mouse_rx_state = 0;
-reg       ps2_mouse_rx_start = 0;
-reg [7:0] ps2_mouse_rx_byte;
-reg       ps2_mouse_rx_strobe;
+reg [1:0] ps2_mouse_rx_start = 0;
+reg [7:0] ps2_mouse_rx_byte = 0;
+reg       ps2_mouse_rx_strobe = 0;
 
 assign ps2_mouse_clk = ps2_clk || (ps2_mouse_tx_state == 0 && ps2_mouse_rx_state == 0);
 
-// ps2 transmitter
+// ps2 transmitter/receiver
 // Takes a byte from the FIFO and sends it in a ps2 compliant serial format.
-reg ps2_mouse_r_inc;
+// Sends a command to the IO controller if bidirectional mode is enabled.
 always@(posedge clk_sys) begin : ps2_mouse
 	reg ps2_clkD;
 	reg ps2_clk_iD, ps2_dat_iD;
+	reg ps2_mouse_r_inc;
 
 	ps2_clkD <= ps2_clk;
 	if (~ps2_clkD & ps2_clk) begin
@@ -335,30 +346,41 @@ always@(posedge clk_sys) begin : ps2_mouse
 		end
 	end
 
-	ps2_clk_iD <= ps2_mouse_clk_i;
-	ps2_dat_iD <= ps2_mouse_data_i;
+	if (PS2BIDIR) begin
 
-	// receive command
-	// first: host pulls down the clock line
-	if (ps2_clk_iD & ~ps2_mouse_clk_i) ps2_mouse_rx_start <= 1;
-	if (ps2_mouse_clk_i) ps2_mouse_rx_start <= 0;
-	// second: host pulls down the data line, while releasing the clock
-	if (ps2_mouse_rx_start && ps2_dat_iD && !ps2_mouse_data_i) begin
-		ps2_mouse_rx_state <= 4'd1;
-		ps2_mouse_rx_start <= 0;
-	end
+		ps2_clk_iD <= ps2_mouse_clk_i;
+		ps2_dat_iD <= ps2_mouse_data_i;
 
-	// host data is valid after the rising edge of the clock
-	if(ps2_mouse_rx_state != 0 && ~ps2_clkD && ps2_clk) begin
-		ps2_mouse_rx_state <= ps2_mouse_rx_state + 1'd1;
-		if (ps2_mouse_rx_state == 9) ;// parity
-		else if (ps2_mouse_rx_state == 10) begin
-			ps2_mouse_data <= 0; // ack the received byte
-		end else if (ps2_mouse_rx_state == 11) begin
-			ps2_mouse_rx_state <= 0;
-			ps2_mouse_rx_strobe <= ~ps2_mouse_rx_strobe;
-		end else begin
-			ps2_mouse_rx_byte <= {ps2_mouse_data_i, ps2_mouse_rx_byte[7:1]};
+		// receive command
+		case (ps2_mouse_rx_start)
+		2'd0:
+			// first: host pulls down the clock line
+			if (ps2_clk_iD & ~ps2_mouse_clk_i) ps2_mouse_rx_start <= 1;
+		2'd1:
+			// second: host pulls down the data line, while releasing the clock
+			if (ps2_dat_iD && !ps2_mouse_data_i) ps2_mouse_rx_start <= 2'd2;
+			// if it releases the clock without pulling down the data line: goto 0
+			else if (ps2_mouse_clk_i) ps2_mouse_rx_start <= 0;
+		2'd2:
+			if (ps2_clkD && ~ps2_clk) begin
+				ps2_mouse_rx_state <= 4'd1;
+				ps2_mouse_rx_start <= 0;
+			end
+		default: ;
+		endcase
+
+		// host data is valid after the rising edge of the clock
+		if(ps2_mouse_rx_state != 0 && ~ps2_clkD && ps2_clk) begin
+			ps2_mouse_rx_state <= ps2_mouse_rx_state + 1'd1;
+			if (ps2_mouse_rx_state == 9) ;// parity
+			else if (ps2_mouse_rx_state == 10) begin
+				ps2_mouse_data <= 0; // ack the received byte
+			end else if (ps2_mouse_rx_state == 11) begin
+				ps2_mouse_rx_state <= 0;
+				ps2_mouse_rx_strobe <= ~ps2_mouse_rx_strobe;
+			end else begin
+				ps2_mouse_rx_byte <= {ps2_mouse_data_i, ps2_mouse_rx_byte[7:1]};
+			end
 		end
 	end
 end
