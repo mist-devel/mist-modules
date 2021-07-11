@@ -66,10 +66,11 @@ wire [7:0] READ_DATA_TOKEN = 8'hfe;
 localparam NCR=4;
 
 localparam RD_STATE_IDLE       = 3'd0;
-localparam RD_STATE_WAIT_IO    = 3'd1;
-localparam RD_STATE_SEND_TOKEN = 3'd2;
-localparam RD_STATE_SEND_DATA  = 3'd3;
-localparam RD_STATE_DELAY      = 3'd4;
+localparam RD_STATE_WAIT_BUSY  = 3'd1;
+localparam RD_STATE_WAIT_IO    = 3'd2;
+localparam RD_STATE_SEND_TOKEN = 3'd3;
+localparam RD_STATE_SEND_DATA  = 3'd4;
+localparam RD_STATE_DELAY      = 3'd5;
 reg [2:0] read_state = RD_STATE_IDLE;
 
 localparam WR_STATE_IDLE       = 3'd0;
@@ -78,7 +79,8 @@ localparam WR_STATE_RECV_DATA  = 3'd2;
 localparam WR_STATE_RECV_CRC0  = 3'd3;
 localparam WR_STATE_RECV_CRC1  = 3'd4;
 localparam WR_STATE_SEND_DRESP = 3'd5;
-localparam WR_STATE_BUSY       = 3'd6;
+localparam WR_STATE_WRITE      = 3'd6;
+localparam WR_STATE_BUSY       = 3'd7;
 reg [2:0] write_state = WR_STATE_IDLE;
 
 reg card_is_reset = 1'b0;    // flag that card has received a reset command
@@ -89,6 +91,7 @@ reg [7:0] cmd = 8'h00;
 reg [2:0] bit_cnt = 3'd0;    // counts bits 0-7 0-7 ...
 reg [3:0] byte_cnt= 4'd15;   // counts bytes
 reg [4:0] delay_cnt;
+reg       wr_first;
 
 reg [39:0] args;
 
@@ -110,7 +113,7 @@ sd_card_dpram #(8, 10) buffer_dpram
     .clock_a      (clk_sys),
     .address_a    ({sd_buff_sel, sd_buff_addr}),
     .data_a       (sd_buff_dout),
-    .wren_a       (sd_buff_wr & sd_ack),
+    .wren_a       (sd_buff_wr & sd_ack & read_state != RD_STATE_IDLE),
     .q_a          (sd_buff_din),
 
     .clock_b      (clk_sys),
@@ -196,12 +199,9 @@ always@(posedge clk_sys) begin
 
                 // CMD17: READ_SINGLE_BLOCK
                 // CMD18: READ_MULTIPLE_BLOCK
-                if((cmd == 8'h51 || cmd == 8'h52) && !terminate_cmd) begin
-                    sd_lba <= sd_sdhc?args[39:8]:{9'd0, args[39:17]};
-                    read_state <= RD_STATE_WAIT_IO;         // start waiting for data from io controller
-                    sd_rd <= 1;                      // trigger request to io controller
-                    sd_busy <= 1;
-                end
+                if((cmd == 8'h51 || cmd == 8'h52) && !terminate_cmd)
+                    read_state <= RD_STATE_WAIT_BUSY; // start waiting for data from io controller
+
             end
         end
         else if((reply_len > 0) && (byte_cnt == 5+NCR+1))
@@ -219,10 +219,19 @@ always@(posedge clk_sys) begin
         RD_STATE_IDLE: ;
         // don't do anything
 
+        // wait until the IO controller is free and issue a read
+        RD_STATE_WAIT_BUSY:
+        if (~sd_busy) begin
+            sd_buff_sel <= 0;
+            sd_lba <= sd_sdhc?args[39:8]:{9'd0, args[39:17]};
+            sd_rd <= 1;                      // trigger request to io controller
+            sd_busy <= 1;
+            read_state <= RD_STATE_WAIT_IO;
+        end
+
         // waiting for io controller to return data
         RD_STATE_WAIT_IO: begin
             buffer_ptr <= 0;
-            sd_buff_sel <= 0;
             if(~sd_busy) begin
                 if (terminate_cmd) begin
                     cmd <= 0;
@@ -299,7 +308,7 @@ always@(posedge clk_sys) begin
             sd_sdo <= WRITE_DATA_RESPONSE[~bit_cnt];
 
         // busy after write until the io controller sends ack
-        if(write_state == WR_STATE_BUSY) 
+        if(write_state == WR_STATE_WRITE || write_state == WR_STATE_BUSY)
             sd_sdo <= 1'b0;
     end
 
@@ -410,7 +419,8 @@ always@(posedge clk_sys) begin
                     // CMD25: WRITE_MULTIPLE_BLOCKS
                     8'h58, 8'h59: begin
                         reply <= 8'h00;    // ok
-                        sd_lba <= sd_sdhc?args[39:8]:{9'd0, args[39:17]};
+                        buffer_ptr <= 0;
+                        wr_first <= 1;
                         write_state <= WR_STATE_EXP_DTOKEN;  // expect data token
                     end
 
@@ -439,67 +449,79 @@ always@(posedge clk_sys) begin
                     endcase
                 end
             end
-
-            // ---------- handle write -----------
-            case(write_state)
-            // don't do anything in idle state
-            WR_STATE_IDLE: ;
-
-            // waiting for data token
-            WR_STATE_EXP_DTOKEN:
-            if({ sbuf, sd_sdi} == 8'hfd && cmd == 8'h59) begin
-                // stop multiple write
-                write_state <= WR_STATE_IDLE;
-            end
-            else
-            if({ sbuf, sd_sdi} == ((cmd == 8'h59) ? 8'hfc : 8'hfe)) begin
-                write_state <= WR_STATE_RECV_DATA;
-                buffer_ptr <= 0;
-                sd_buff_sel <= 0;
-            end
-
-            // transfer 512 bytes
-            WR_STATE_RECV_DATA: begin
-                // push one byte into local buffer
-                buffer_write_strobe <= 1'b1;
-                buffer_din <= { sbuf, sd_sdi };
-
-                // all bytes written?
-                if(&buffer_ptr[8:0])
-                    write_state <= WR_STATE_RECV_CRC0;
-            end
-
-            // transfer 1st crc byte
-            WR_STATE_RECV_CRC0:
-                write_state <= WR_STATE_RECV_CRC1;
-
-            // transfer 2nd crc byte
-            WR_STATE_RECV_CRC1:
-                write_state <= WR_STATE_SEND_DRESP;
-
-            // send data response
-            WR_STATE_SEND_DRESP: begin
-                write_state <= WR_STATE_BUSY;
-                sd_wr <= 1;               // trigger write request to io controller
-                sd_busy <= 1;
-            end
-
-            // wait for io controller to accept data
-            WR_STATE_BUSY:
-            if(~sd_busy) begin
-                if (cmd == 8'h58)
-                    write_state <= WR_STATE_IDLE;
-                else begin
-                    sd_lba <= sd_lba + 1'd1;
-                    sd_buff_sel <= !sd_buff_sel;
-                    write_state <= WR_STATE_EXP_DTOKEN;
-                end
-            end
-
-            default: ;
-            endcase
         end
     end
+
+    // ---------- handle write -----------
+    case(write_state)
+        // don't do anything in idle state
+        WR_STATE_IDLE: ;
+
+        // waiting for data token
+        WR_STATE_EXP_DTOKEN:
+        if (sd_cs) write_state <= WR_STATE_IDLE;
+        else if (~old_sd_sck && sd_sck && bit_cnt == 7) begin
+            if({ sbuf, sd_sdi} == 8'hfd && cmd == 8'h59)
+                // stop multiple write (and wait until the last write finishes)
+                write_state <= WR_STATE_BUSY;
+            else
+            if({ sbuf, sd_sdi} == ((cmd == 8'h59) ? 8'hfc : 8'hfe))
+                write_state <= WR_STATE_RECV_DATA;
+        end
+
+        // transfer 512 bytes
+        WR_STATE_RECV_DATA:
+        if (sd_cs) write_state <= WR_STATE_IDLE;
+        else if (~old_sd_sck && sd_sck && bit_cnt == 7) begin
+            // push one byte into local buffer
+            buffer_write_strobe <= 1'b1;
+            buffer_din <= { sbuf, sd_sdi };
+
+            // all bytes written?
+            if(&buffer_ptr[8:0])
+                write_state <= WR_STATE_RECV_CRC0;
+        end
+
+        // transfer 1st crc byte
+        WR_STATE_RECV_CRC0:
+        if (sd_cs) write_state <= WR_STATE_IDLE;
+        else if (~old_sd_sck && sd_sck && bit_cnt == 7) write_state <= WR_STATE_RECV_CRC1;
+
+        // transfer 2nd crc byte
+        WR_STATE_RECV_CRC1:
+        if (sd_cs) write_state <= WR_STATE_IDLE;
+        else if (~old_sd_sck && sd_sck && bit_cnt == 7) write_state <= WR_STATE_SEND_DRESP;
+
+        // send data response
+        WR_STATE_SEND_DRESP:
+        if (sd_cs) write_state <= WR_STATE_IDLE;
+        else if (~old_sd_sck && sd_sck && bit_cnt == 7) write_state <= WR_STATE_WRITE;
+
+        WR_STATE_WRITE:
+        if (~sd_busy) begin
+            if (wr_first) begin
+                sd_buff_sel <= 0;
+                sd_lba <= sd_sdhc?args[39:8]:{9'd0, args[39:17]};
+                wr_first <= 0;
+            end else begin
+                sd_buff_sel <= !sd_buff_sel;
+                sd_lba <= sd_lba + 1'd1;
+            end
+            sd_wr <= 1;               // trigger write request to io controller
+            sd_busy <= 1;
+
+            if (sd_cs || cmd == 8'h58)
+                write_state <= WR_STATE_BUSY;
+            else
+                write_state <= WR_STATE_EXP_DTOKEN; // multi-sector writes
+
+        end
+
+        WR_STATE_BUSY:
+        if (~sd_busy) write_state <= WR_STATE_IDLE;
+
+        default: ;
+    endcase
 end
 
 endmodule
