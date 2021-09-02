@@ -104,6 +104,7 @@ parameter PS2DIV=100; // master clock divider for psk2_kbd/mouse clk
 parameter ROM_DIRECT_UPLOAD=0; // direct upload used for file uploads from the ARM
 parameter SD_IMAGES=2; // number of block-access images (max. 4 supported in current firmware)
 parameter PS2BIDIR=0; // bi-directional PS2 interface
+parameter FEATURES=0; // requested features from the firmware
 
 localparam W = $clog2(SD_IMAGES);
 
@@ -494,6 +495,11 @@ always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 				// send alternating flag byte and data
 				if(byte_cnt[0]) spi_byte_out <= serial_out_status;
 				else spi_byte_out <= serial_out_byte;
+
+			// core features
+			8'h80:
+				if (byte_cnt == 0) spi_byte_out <= 8'h80;
+				else spi_byte_out <= FEATURES[(4-byte_cnt)<<3 +:8];
 
 			endcase
 		end
