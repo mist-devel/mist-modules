@@ -140,8 +140,8 @@ wire [7:0] sd_cmd = { 4'h6, sd_conf, sd_sdhc, sd_wr[drive_sel], sd_rd[drive_sel]
 wire spi_sck = SPI_CLK;
 
 // ---------------- PS2 ---------------------
-// 8 byte fifos to store ps2 bytes
-localparam PS2_FIFO_BITS = 3;
+// 16 byte fifos to store ps2 bytes
+localparam PS2_FIFO_BITS = 4;
 
 reg ps2_clk;
 always @(posedge clk_sys) begin
