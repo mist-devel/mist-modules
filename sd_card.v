@@ -160,7 +160,7 @@ always @(posedge clk_sys) begin
     old_mounted <= img_mounted;
     if (~old_mounted & img_mounted) begin
         vhd <= |img_size;
-        vhd_size <= img_size;
+        vhd_size <= img_size[40:0];
     end
 end
 
