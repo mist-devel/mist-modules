@@ -40,8 +40,8 @@ module user_io (
 	output reg   [31:0] joystick_2,
 	output reg   [31:0] joystick_3,
 	output reg   [31:0] joystick_4,
-	output reg   [15:0] joystick_analog_0,
-	output reg   [15:0] joystick_analog_1,
+	output reg   [31:0] joystick_analog_0,
+	output reg   [31:0] joystick_analog_1,
 	output        [1:0] buttons,
 	output        [1:0] switches,
 	output              scandoubler_disable,
@@ -630,6 +630,18 @@ always @(posedge clk_sys) begin : cmd_block
 							joystick_analog_0[7:0] <= spi_byte_in;
 						else if(stick_idx == 1)
 							joystick_analog_1[7:0] <= spi_byte_in;
+					end else if(abyte_cnt == 4) begin
+						// fourth byte is 2nd x axis
+						if(stick_idx == 0)
+							joystick_analog_0[31:24] <= spi_byte_in;
+						else if(stick_idx == 1)
+							joystick_analog_1[31:24] <= spi_byte_in;
+					end else if(abyte_cnt == 5) begin
+						// fifth byte is 2nd y axis
+						if(stick_idx == 0)
+							joystick_analog_0[23:16] <= spi_byte_in;
+						else if(stick_idx == 1)
+							joystick_analog_1[23:16] <= spi_byte_in;
 					end
 				end
 
