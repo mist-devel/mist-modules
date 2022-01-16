@@ -30,6 +30,10 @@ module data_io
 	input             SPI_DI,
 	inout             SPI_DO,
 
+	input             QCSn,
+	input             QSCK,
+	input       [3:0] QDAT,
+
 	input             clkref_n, // assert ioctl_wr one cycle after clkref stobe (negative active)
 
 	// ARM -> FPGA download
@@ -48,14 +52,17 @@ module data_io
 
 parameter START_ADDR = 25'd0;
 parameter ROM_DIRECT_UPLOAD = 0;
+parameter USE_QSPI = 0;
 
 ///////////////////////////////   DOWNLOADING   ///////////////////////////////
 
 reg  [7:0] data_w;
 reg  [7:0] data_w2  = 0;
+reg  [7:0] data_w3  = 0;
 reg  [3:0] cnt;
 reg        rclk   = 0;
 reg        rclk2  = 0;
+reg        rclk3  = 0;
 reg        addr_reset = 0;
 reg        downloading_reg = 0;
 reg        uploading_reg = 0;
@@ -67,6 +74,9 @@ localparam DIO_FILE_INDEX   = 8'h55;
 localparam DIO_FILE_INFO    = 8'h56;
 localparam DIO_FILE_RX      = 8'h57;
 localparam DIO_FILE_RX_DAT  = 8'h58;
+
+localparam QSPI_READ        = 8'h40;
+localparam QSPI_WRITE       = 8'h41;
 
 assign SPI_DO = reg_do;
 
@@ -192,19 +202,50 @@ end
 end
 endgenerate
 
+// QSPI receiver
+generate if (USE_QSPI == 1) begin
+
+always@(negedge QSCK, posedge QCSn) begin : QSPI_RECEIVER
+	reg nibble_lo;
+	reg cmd_got;
+	reg cmd_write;
+
+	if (QCSn) begin
+		cmd_got <= 0;
+		cmd_write <= 0;
+		nibble_lo <= 0;
+	end else begin
+		nibble_lo <= ~nibble_lo;
+		if (nibble_lo) begin
+			data_w3[3:0] <= QDAT;
+			if (!cmd_got) begin
+				cmd_got <= 1;
+				if ({data_w3[7:4], QDAT} == QSPI_WRITE) cmd_write <= 1;
+			end else begin
+				if (cmd_write) rclk3 <= ~rclk3;
+			end
+		end else
+			data_w3[7:4] <= QDAT;
+	end
+end
+end
+endgenerate
+
 always@(posedge clk_sys) begin : DATA_OUT
 	// synchronisers
 	reg rclkD, rclkD2;
 	reg rclk2D, rclk2D2;
+	reg rclk3D, rclk3D2;
 	reg addr_resetD, addr_resetD2;
 
-	reg wr_int, wr_int_direct, rd_int;
+	reg wr_int, wr_int_direct, wr_int_qspi, rd_int;
 	reg [24:0] addr;
 	reg [31:0] filepos;
 
 	// bring flags from spi clock domain into core clock domain
 	{ rclkD, rclkD2 } <= { rclk, rclkD };
 	{ rclk2D ,rclk2D2 } <= { rclk2, rclk2D };
+	{ rclk3D ,rclk3D2 } <= { rclk3, rclk3D };
 	{ addr_resetD, addr_resetD2 } <= { addr_reset, addr_resetD };
 
 	ioctl_wr <= 0;
@@ -224,8 +265,9 @@ always@(posedge clk_sys) begin : DATA_OUT
 		rd_int <= 0;
 		wr_int <= 0;
 		wr_int_direct <= 0;
-		if (wr_int || wr_int_direct) begin
-			ioctl_dout <= wr_int ? data_w : data_w2;
+		wr_int_qspi <= 0;
+		if (wr_int || wr_int_direct || wr_int_qspi) begin
+			ioctl_dout <= wr_int ? data_w : wr_int_direct ? data_w2 : data_w3;
 			ioctl_wr <= 1;
 			addr <= addr + 1'd1;
 			ioctl_addr <= addr;
@@ -254,6 +296,11 @@ always@(posedge clk_sys) begin : DATA_OUT
 		filepos <= filepos + 1'd1;
 		wr_int_direct <= 1;
 	end
+	// QSPI transfer receiver
+	if (rclk3D ^ rclk3D2) begin
+		wr_int_qspi <= downloading_reg;
+	end
+
 end
 
 endmodule
