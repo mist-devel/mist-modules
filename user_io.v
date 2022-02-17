@@ -274,6 +274,10 @@ end
 reg [7:0] ps2_mouse_fifo [(2**PS2_FIFO_BITS)-1:0];
 reg [PS2_FIFO_BITS-1:0] ps2_mouse_wptr;
 reg [PS2_FIFO_BITS-1:0] ps2_mouse_rptr;
+wire [PS2_FIFO_BITS:0] ps2_mouse_used = ps2_mouse_wptr >= ps2_mouse_rptr ?
+                                        ps2_mouse_wptr - ps2_mouse_rptr :
+                                        ps2_mouse_wptr - ps2_mouse_rptr + (2'd2**PS2_FIFO_BITS);
+wire [PS2_FIFO_BITS:0] ps2_mouse_free = (2'd2**PS2_FIFO_BITS) - ps2_mouse_used;
 
 // ps2 transmitter state machine
 reg [3:0] ps2_mouse_tx_state;
@@ -544,6 +548,7 @@ always @(posedge clk_sys) begin : cmd_block
 	reg [7:0] mouse_flags_r;
 	reg [7:0] mouse_x_r;
 	reg [7:0] mouse_y_r;
+	reg       mouse_fifo_ok;
 
 	reg       key_pressed_r;
 	reg       key_extended_r;
@@ -559,6 +564,7 @@ always @(posedge clk_sys) begin : cmd_block
 
 	if (spi_transfer_end) begin
 		abyte_cnt <= 8'd0;
+		mouse_fifo_ok <= 0;
 	end else if (spi_receiver_strobeD ^ spi_receiver_strobe) begin
 
 		if(~&abyte_cnt) 
@@ -566,6 +572,9 @@ always @(posedge clk_sys) begin : cmd_block
 
 		if(abyte_cnt == 0) begin
 			acmd <= spi_byte_in;
+			if (spi_byte_in == 8'h70 || spi_byte_in == 8'h71)
+				// accept the incoming mouse data only if there's place for the full packet
+				mouse_fifo_ok <= ps2_mouse_free > 3;
 		end else begin
 			case(acmd)
 				// buttons and switches
@@ -577,7 +586,7 @@ always @(posedge clk_sys) begin : cmd_block
 				8'h64: if (abyte_cnt < 5) joystick_4[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
 				8'h70,8'h71: begin
 					// store incoming ps2 mouse bytes
-					if (abyte_cnt < 4) begin
+					if (abyte_cnt < 4 && mouse_fifo_ok) begin
 						ps2_mouse_fifo[ps2_mouse_wptr] <= spi_byte_in;
 						ps2_mouse_wptr <= ps2_mouse_wptr + 1'd1;
 					end
