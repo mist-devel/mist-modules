@@ -57,14 +57,15 @@ module user_io (
 	input        [31:0] sd_lba,
 	input [SD_IMAGES-1:0] sd_rd,
 	input [SD_IMAGES-1:0] sd_wr,
-	output reg          sd_ack,
-	output reg          sd_ack_conf,
+	output reg          sd_ack = 0,  // ack any transfer
+	output reg          sd_ack_conf = 0,
+	output reg [SD_IMAGES-1:0] sd_ack_x = 0, // ack specific transfer
 	input               sd_conf,
 	input               sd_sdhc,
 	output reg    [7:0] sd_dout, // valid on rising edge of sd_dout_strobe
-	output reg          sd_dout_strobe,
+	output reg          sd_dout_strobe = 0,
 	input         [7:0] sd_din,
-	output reg          sd_din_strobe,
+	output reg          sd_din_strobe = 0,
 	output reg    [8:0] sd_buff_addr,
 
 	output reg [SD_IMAGES-1:0] img_mounted, // rising edge if a new image is mounted
@@ -707,6 +708,7 @@ always @(posedge clk_sd) begin : sd_block
 		sd_ack <= 1'b0;
 		sd_ack_conf <= 1'b0;
 		sd_buff_addr <= 0;
+		if (acmd == 8'h17 || acmd == 8'h18) sd_ack_x <= 0;
 	end else if (spi_receiver_strobeD ^ spi_receiver_strobe) begin
 
 		if(~&abyte_cnt) 
@@ -749,6 +751,9 @@ always @(posedge clk_sd) begin : sd_block
 
 				// send image info
 				8'h1d: if(abyte_cnt<9) img_size[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
+				// data transfer ack
+				8'h23: sd_ack_x <= 1'b1 << spi_byte_in;
+
 			endcase
 		end
 	end

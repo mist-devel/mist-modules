@@ -48,6 +48,7 @@ port (
 	sd_wr             : in  std_logic_vector(SD_IMAGES-1 downto 0) := (others => '0');
 	sd_ack            : out std_logic;
 	sd_ack_conf       : out std_logic;
+	sd_ack_x          : out std_logic_vector(SD_IMAGES-1 downto 0);
 	sd_conf           : in  std_logic := '0';
 	sd_sdhc           : in  std_logic := '1';
 	img_size          : out std_logic_vector(63 downto 0);
