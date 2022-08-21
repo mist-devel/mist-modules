@@ -2,7 +2,7 @@
 // data_io.v
 //
 // data_io for the MiST board
-// http://code.google.com/p/mist-board/
+// https://github.com/mist-devel
 //
 // Copyright (c) 2014 Till Harbaum <till@harbaum.org>
 //
@@ -47,12 +47,26 @@ module data_io
 	output reg  [7:0] ioctl_dout,
 	input       [7:0] ioctl_din,
 	output reg [23:0] ioctl_fileext,      // file extension
-	output reg [31:0] ioctl_filesize      // file size
+	output reg [31:0] ioctl_filesize,     // file size
+
+	// IDE interface
+	input             hdd_clk,
+	input             hdd_cmd_req,
+	input             hdd_dat_req,
+	output reg        hdd_status_wr,
+	output reg  [2:0] hdd_addr = 0,
+	output reg        hdd_wr,
+
+	output reg [15:0] hdd_data_out,
+	input      [15:0] hdd_data_in,
+	output reg        hdd_data_rd,
+	output reg        hdd_data_wr
 );
 
 parameter START_ADDR = 25'd0;
 parameter ROM_DIRECT_UPLOAD = 0;
 parameter USE_QSPI = 0;
+parameter ENABLE_IDE = 0;
 
 ///////////////////////////////   DOWNLOADING   ///////////////////////////////
 
@@ -60,34 +74,63 @@ reg  [7:0] data_w;
 reg  [7:0] data_w2  = 0;
 reg  [7:0] data_w3  = 0;
 reg  [3:0] cnt;
+reg  [7:0] cmd;
+reg  [5:0] bytecnt;
 reg        rclk   = 0;
 reg        rclk2  = 0;
 reg        rclk3  = 0;
+reg        rclk_ide_stat = 0;
+reg        rclk_ide_regs_rd = 0;
+reg        rclk_ide_regs_wr = 0;
+reg        rclk_ide_wr = 0;
+reg        rclk_ide_rd = 0;
 reg        addr_reset = 0;
 reg        downloading_reg = 0;
 reg        uploading_reg = 0;
 reg        reg_do;
 
-localparam DIO_FILE_TX      = 8'h53;
-localparam DIO_FILE_TX_DAT  = 8'h54;
-localparam DIO_FILE_INDEX   = 8'h55;
-localparam DIO_FILE_INFO    = 8'h56;
-localparam DIO_FILE_RX      = 8'h57;
-localparam DIO_FILE_RX_DAT  = 8'h58;
+localparam DIO_FILE_TX       = 8'h53;
+localparam DIO_FILE_TX_DAT   = 8'h54;
+localparam DIO_FILE_INDEX    = 8'h55;
+localparam DIO_FILE_INFO     = 8'h56;
+localparam DIO_FILE_RX       = 8'h57;
+localparam DIO_FILE_RX_DAT   = 8'h58;
 
-localparam QSPI_READ        = 8'h40;
-localparam QSPI_WRITE       = 8'h41;
+localparam QSPI_READ         = 8'h40;
+localparam QSPI_WRITE        = 8'h41;
+
+localparam CMD_IDE_REGS_RD   = 8'h80;
+localparam CMD_IDE_REGS_WR   = 8'h90;
+localparam CMD_IDE_DATA_WR   = 8'hA0;
+localparam CMD_IDE_DATA_RD   = 8'hB0;
+localparam CMD_IDE_STATUS_WR = 8'hF0;
 
 assign SPI_DO = reg_do;
 
 // data_io has its own SPI interface to the io controller
+wire [7:0] cmdcode = { 4'h0, hdd_dat_req, hdd_cmd_req, 2'b00 };
+
 always@(negedge SPI_SCK or posedge SPI_SS2) begin : SPI_TRANSMITTER
 	reg [7:0] dout_r;
 
 	if(SPI_SS2) begin
 		reg_do <= 1'bZ;
 	end else begin
-		if (cnt == 15) dout_r <= ioctl_din;
+		if (cnt == 0) dout_r <= cmdcode;
+		if (cnt == 15) begin
+			case(cmd)
+				CMD_IDE_REGS_RD,
+				CMD_IDE_DATA_RD:
+					dout_r <= bytecnt[0] ? hdd_data_in[7:0] : hdd_data_in[15:8];
+
+				DIO_FILE_RX_DAT:
+					dout_r <= ioctl_din;
+
+				default:
+					dout_r <= 0;
+
+			endcase
+		end
 		reg_do <= dout_r[~cnt[2:0]];
 	end
 end
@@ -96,8 +139,6 @@ end
 always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 	reg  [6:0] sbuf;
 	reg [24:0] addr;
-	reg  [7:0] cmd;
-	reg  [5:0] bytecnt;
 
 	if(SPI_SS2) begin
 		bytecnt <= 0;
@@ -115,7 +156,36 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 		if(cnt == 7) cmd <= {sbuf, SPI_DI};
 
 		if(cnt == 15) begin
+			if (~&bytecnt) bytecnt <= bytecnt + 1'd1;
+
 			case (cmd)
+			//IDE commands
+			CMD_IDE_STATUS_WR:
+				if (bytecnt == 0) begin
+					data_w <= {sbuf, SPI_DI};
+					rclk_ide_stat <= ~rclk_ide_stat;
+				end
+
+			CMD_IDE_REGS_WR:
+				if (bytecnt >= 8 && bytecnt <= 18 && !bytecnt[0]) begin
+					data_w <= {sbuf, SPI_DI};
+					rclk_ide_regs_wr <= ~rclk_ide_regs_wr;
+				end
+
+			CMD_IDE_REGS_RD:
+				if (bytecnt > 5 && !bytecnt[0]) begin
+					rclk_ide_regs_rd <= ~rclk_ide_regs_rd;
+				end
+
+			CMD_IDE_DATA_WR:
+				if (bytecnt > 4) begin
+					data_w <= {sbuf, SPI_DI};
+					rclk_ide_wr <= ~rclk_ide_wr;
+				end
+
+			CMD_IDE_DATA_RD:
+				if (bytecnt > 3) rclk_ide_rd <= ~rclk_ide_rd;
+
 			// prepare/end transmission
 			DIO_FILE_TX: begin
 				// prepare
@@ -150,7 +220,6 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 
 			// receiving FAT directory entry (mist-firmware/fat.h - DIRENTRY)
 			DIO_FILE_INFO: begin
-				bytecnt <= bytecnt + 1'd1;
 				case (bytecnt)
 					8'h08: ioctl_fileext[23:16]  <= {sbuf, SPI_DI};
 					8'h09: ioctl_fileext[15: 8]  <= {sbuf, SPI_DI};
@@ -167,7 +236,7 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 end
 
 // direct SD Card->FPGA transfer
-generate if (ROM_DIRECT_UPLOAD == 1) begin
+generate if (ROM_DIRECT_UPLOAD == 1 || ENABLE_IDE == 1) begin
 
 always@(posedge SPI_SCK, posedge SPI_SS4) begin : SPI_DIRECT_RECEIVER
 	reg  [6:0] sbuf2;
@@ -292,7 +361,7 @@ always@(posedge clk_sys) begin : DATA_OUT
 		rd_int <= uploading_reg;
 	end
 	// direct transfer receiver
-	if (rclk2D ^ rclk2D2 && filepos != ioctl_filesize) begin
+	if (rclk2D ^ rclk2D2 && filepos != ioctl_filesize && downloading_reg) begin
 		filepos <= filepos + 1'd1;
 		wr_int_direct <= 1;
 	end
@@ -302,5 +371,80 @@ always@(posedge clk_sys) begin : DATA_OUT
 	end
 
 end
+
+generate if (ENABLE_IDE == 1) begin
+
+always@(posedge hdd_clk) begin : IDE_OUT
+	reg hdd_cmd_reqD, hdd_dat_reqD;
+	reg loword;
+
+	// synchronisers
+	reg rclk2D, rclk2D2;
+	reg rclk_ide_statD, rclk_ide_statD2;
+	reg rclk_ide_wrD, rclk_ide_wrD2;
+	reg rclk_ide_rdD, rclk_ide_rdD2;
+	reg rclk_ide_regs_wrD, rclk_ide_regs_wrD2;
+	reg rclk_ide_regs_rdD, rclk_ide_regs_rdD2;
+
+	// bring flags from spi clock domain into core clock domain
+	{ rclk2D ,rclk2D2 } <= { rclk2, rclk2D };
+	{ rclk_ide_statD, rclk_ide_statD2 } <= { rclk_ide_stat, rclk_ide_statD };
+	{ rclk_ide_rdD, rclk_ide_rdD2 } <= { rclk_ide_rd, rclk_ide_rdD };
+	{ rclk_ide_wrD, rclk_ide_wrD2 } <= { rclk_ide_wr, rclk_ide_wrD };
+	{ rclk_ide_regs_rdD, rclk_ide_regs_rdD2 } <= { rclk_ide_regs_rd, rclk_ide_regs_rdD };
+	{ rclk_ide_regs_wrD, rclk_ide_regs_wrD2 } <= { rclk_ide_regs_wr, rclk_ide_regs_wrD };
+
+	// IDE receiver
+	hdd_cmd_reqD <= hdd_cmd_req;
+	hdd_dat_reqD <= hdd_dat_req;
+
+	hdd_wr <= 0;
+	hdd_status_wr <= 0;
+	hdd_data_wr <= 0;
+	hdd_data_rd <= 0;
+
+	if (hdd_cmd_reqD ^ hdd_cmd_req || hdd_dat_reqD ^ hdd_dat_req) begin
+		hdd_addr <= 0;
+		loword <= 0;
+	end
+
+	if (rclk_ide_statD ^ rclk_ide_statD2) begin
+		hdd_status_wr <= 1;
+		hdd_data_out <= {8'h00, data_w};
+	end
+	if (rclk_ide_rdD ^ rclk_ide_rdD2) begin
+		loword <= ~loword;
+		if (loword)
+			hdd_data_rd <= 1;
+	end
+	if (rclk_ide_wrD ^ rclk_ide_wrD2) begin
+		loword <= ~loword;
+		if (!loword)
+			hdd_data_out[15:8] <= data_w;
+		else begin
+			hdd_data_wr <= 1;
+			hdd_data_out[7:0] <= data_w;
+		end
+	end
+	if (rclk2D ^ rclk2D2 && !downloading_reg) begin
+		loword <= ~loword;
+		if (!loword)
+			hdd_data_out[15:8] <= data_w2;
+		else begin
+			hdd_data_wr <= 1;
+			hdd_data_out[7:0] <= data_w2;
+		end
+	end
+	if (rclk_ide_regs_wrD ^ rclk_ide_regs_wrD2) begin
+		hdd_wr <= 1;
+		hdd_data_out <= {8'h00, data_w};
+		hdd_addr <= hdd_addr + 1'd1;
+	end
+	if (rclk_ide_regs_rdD ^ rclk_ide_regs_rdD2) begin
+		hdd_addr <= hdd_addr + 1'd1;
+	end
+end
+end
+endgenerate
 
 endmodule

@@ -2,7 +2,7 @@
 // user_io.v
 //
 // user_io for the MiST board
-// http://code.google.com/p/mist-board/
+// https://github.com/mist-devel
 //
 // Copyright (c) 2014 Till Harbaum <till@harbaum.org>
 //
