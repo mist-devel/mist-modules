@@ -23,6 +23,14 @@ reg   [12:0] inptr;        // fifo input pointer
 reg   [12:0] outptr;       // fifo output pointer
 wire         empty_rd;     // fifo empty flag (set immediately after reading the last word)
 reg          empty_wr;     // fifo empty flag (set one clock after writting the empty fifo)
+reg          rd_old;
+reg          wr_old;
+
+always @(posedge clk)
+	if (clk_en) begin
+		rd_old <= rd;
+		wr_old <= wr;
+	end
 
 // main fifo memory (implemented using synchronous block ram)
 always @(posedge clk)
@@ -40,7 +48,7 @@ always @(posedge clk)
 	if (clk_en) begin
 		if (reset)
 			inptr <= 0;
-		else if (wr)
+		else if (wr_old & ~wr)
 			inptr <= inptr + 1'd1;
 	end
 
@@ -49,7 +57,7 @@ always @(posedge clk)
 	if (clk_en) begin
 		if (reset)
 			outptr <= 0;
-		else if (rd)
+		else if (rd_old & ~rd)
 			outptr <= outptr + 1'd1;
 	end
 

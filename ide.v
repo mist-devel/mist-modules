@@ -198,8 +198,18 @@ always @(posedge clk)
 			sector_count <= sector_count - 8'd1;
 	end
 
-assign sector_count_dec_in  = pio_in & fifo_last_out & sel_fifo & rd & packet_state == PACKET_IDLE;
-assign sector_count_dec_out = pio_out & fifo_last_in & sel_fifo & hwr & lwr & packet_state == PACKET_IDLE;
+reg rd_old;
+reg wr_old;
+reg sel_fifo_old;
+always @(posedge clk)
+	if (clk_en) begin
+		rd_old <= rd;
+		wr_old <= hwr & lwr;
+		sel_fifo_old <= sel_fifo;
+	end
+
+assign sector_count_dec_in  = pio_in & fifo_last_out & sel_fifo_old & ~rd & rd_old & packet_state == PACKET_IDLE;
+assign sector_count_dec_out = pio_out & fifo_last_in & sel_fifo_old & ~hwr & ~lwr & wr_old & packet_state == PACKET_IDLE;
 
 // task file register control
 assign tfr_we =  packet_in_last ? 1'b1 : bsy ? hdd_wr : sel_tfr & hwr;
