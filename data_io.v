@@ -75,9 +75,11 @@ reg  [7:0] data_w2  = 0;
 reg  [7:0] data_w3  = 0;
 reg  [3:0] cnt;
 reg  [7:0] cmd;
-reg  [5:0] bytecnt;
+reg  [6:0] bytecnt;
 reg        rclk   = 0;
+reg        rst0   = 1;
 reg        rclk2  = 0;
+reg        rst2   = 1;
 reg        rclk3  = 0;
 reg        rclk_ide_stat = 0;
 reg        rclk_ide_regs_rd = 0;
@@ -143,7 +145,9 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 	if(SPI_SS2) begin
 		bytecnt <= 0;
 		cnt <= 0;
+		rst0 <= 1;
 	end	else begin
+		rst0 <= 0;
 		// don't shift in last bit. It is evaluated directly
 		// when writing to ram
 		if(cnt != 15) sbuf <= { sbuf[5:0], SPI_DI};
@@ -157,6 +161,7 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 
 		if(cnt == 15) begin
 			if (~&bytecnt) bytecnt <= bytecnt + 1'd1;
+			else bytecnt[0] <= ~bytecnt[0];
 
 			case (cmd)
 			//IDE commands
@@ -246,7 +251,9 @@ always@(posedge SPI_SCK, posedge SPI_SS4) begin : SPI_DIRECT_RECEIVER
 	if(SPI_SS4) begin
 		cnt2 <= 0;
 		bytecnt <= 0;
+		rst2 <= 1;
 	end else begin
+		rst2 <= 0;
 		// don't shift in last bit. It is evaluated directly
 		// when writing to ram
 		if(cnt2 != 7)
@@ -375,7 +382,6 @@ end
 generate if (ENABLE_IDE == 1) begin
 
 always@(posedge hdd_clk) begin : IDE_OUT
-	reg hdd_cmd_reqD, hdd_dat_reqD;
 	reg loword;
 
 	// synchronisers
@@ -385,6 +391,8 @@ always@(posedge hdd_clk) begin : IDE_OUT
 	reg rclk_ide_rdD, rclk_ide_rdD2;
 	reg rclk_ide_regs_wrD, rclk_ide_regs_wrD2;
 	reg rclk_ide_regs_rdD, rclk_ide_regs_rdD2;
+	reg rst0D, rst0D2;
+	reg rst2D, rst2D2;
 
 	// bring flags from spi clock domain into core clock domain
 	{ rclk2D ,rclk2D2 } <= { rclk2, rclk2D };
@@ -393,20 +401,17 @@ always@(posedge hdd_clk) begin : IDE_OUT
 	{ rclk_ide_wrD, rclk_ide_wrD2 } <= { rclk_ide_wr, rclk_ide_wrD };
 	{ rclk_ide_regs_rdD, rclk_ide_regs_rdD2 } <= { rclk_ide_regs_rd, rclk_ide_regs_rdD };
 	{ rclk_ide_regs_wrD, rclk_ide_regs_wrD2 } <= { rclk_ide_regs_wr, rclk_ide_regs_wrD };
+	{ rst0D, rst0D2 } <= { rst0, rst0D };
+	{ rst2D, rst2D2 } <= { rst2, rst2D };
 
 	// IDE receiver
-	hdd_cmd_reqD <= hdd_cmd_req;
-	hdd_dat_reqD <= hdd_dat_req;
-
 	hdd_wr <= 0;
 	hdd_status_wr <= 0;
 	hdd_data_wr <= 0;
 	hdd_data_rd <= 0;
 
-	if (hdd_cmd_reqD ^ hdd_cmd_req || hdd_dat_reqD ^ hdd_dat_req) begin
-		hdd_addr <= 0;
-		loword <= 0;
-	end
+	if (rst0D2) hdd_addr <= 0;
+	if (rst0D2 && rst2D2) loword <= 0;
 
 	if (rclk_ide_statD ^ rclk_ide_statD2) begin
 		hdd_status_wr <= 1;
