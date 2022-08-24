@@ -43,6 +43,7 @@ module ide
 	input          sel_secondary,
 	input   [15:0] data_in,
 	output  [15:0] data_out,
+	output         data_oe,
 	input          rd,
 	input          hwr,
 	input          lwr,
@@ -393,9 +394,10 @@ ide_fifo SECBUF1
 // fifo is not ready for reading
 assign nrdy = pio_in & sel_fifo & fifo_empty;
 
+assign data_oe = (!dev[1] && hdd0_ena[dev[0]]) || (dev[1] && hdd1_ena[dev[0]]);
 //data_out multiplexer
 assign data_out = sel_fifo && rd ? fifo_data_out  :
-                  sel_status ? ((!dev[1] && hdd0_ena[dev[0]]) || (dev[1] && hdd1_ena[dev[0]])) ? {status,8'h00} : 16'h00_00 :
+                  sel_status ? data_oe ? {status,8'h00} : 16'h00_00 :
                   sel_tfr && rd ? {tfr_out,8'h00} : 16'h00_00;
 
 //===============================================================================================//

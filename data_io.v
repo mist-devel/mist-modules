@@ -60,7 +60,11 @@ module data_io
 	output reg [15:0] hdd_data_out,
 	input      [15:0] hdd_data_in,
 	output reg        hdd_data_rd,
-	output reg        hdd_data_wr
+	output reg        hdd_data_wr,
+
+	// IDE config
+	output reg  [1:0] hdd0_ena,
+	output reg  [1:0] hdd1_ena
 );
 
 parameter START_ADDR = 25'd0;
@@ -106,6 +110,7 @@ localparam CMD_IDE_REGS_WR   = 8'h90;
 localparam CMD_IDE_DATA_WR   = 8'hA0;
 localparam CMD_IDE_DATA_RD   = 8'hB0;
 localparam CMD_IDE_STATUS_WR = 8'hF0;
+localparam CMD_IDE_CFG_WR    = 8'hFA;
 
 assign SPI_DO = reg_do;
 
@@ -165,6 +170,12 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 
 			case (cmd)
 			//IDE commands
+			CMD_IDE_CFG_WR:
+				if (bytecnt == 0) begin
+					hdd0_ena <= {sbuf[0], SPI_DI};
+					hdd1_ena <= sbuf[2:1];
+				end
+
 			CMD_IDE_STATUS_WR:
 				if (bytecnt == 0) begin
 					data_w <= {sbuf, SPI_DI};
