@@ -87,6 +87,9 @@ module user_io (
 	output reg    [7:0] key_code,     // key scan code
 	output reg          key_strobe,   // key data valid
 
+	input         [7:0] kbd_out_data,   // for Archie
+	input               kbd_out_strobe,
+
 	// mouse data
 	output reg    [8:0] mouse_x,
 	output reg    [8:0] mouse_y,
@@ -106,6 +109,7 @@ parameter ROM_DIRECT_UPLOAD=0; // direct upload used for file uploads from the A
 parameter SD_IMAGES=2; // number of block-access images (max. 4 supported in current firmware)
 parameter PS2BIDIR=0; // bi-directional PS2 interface
 parameter FEATURES=0; // requested features from the firmware
+parameter ARCHIE=0;
 
 localparam W = $clog2(SD_IMAGES);
 
@@ -124,9 +128,8 @@ assign no_csync = but_sw[6];
 
 assign conf_addr = byte_cnt;
 
-// this variant of user_io is for 8 bit cores (type == a4) only
 // bit 4 indicates ROM direct upload capability
-wire [7:0] core_type = ROM_DIRECT_UPLOAD ? 8'hb4 : 8'ha4;
+wire [7:0] core_type = ARCHIE ? 8'ha6 : ROM_DIRECT_UPLOAD ? 8'hb4 : 8'ha4;
 
 reg [W:0] drive_sel;
 always begin
@@ -451,6 +454,23 @@ always@(negedge spi_sck or posedge SPI_SS_IO) begin : spi_byteout
 	end
 end
 
+generate if (ARCHIE) begin
+reg  [7:0] kbd_out_status;
+reg  [7:0] kbd_out_data_r;
+reg        kbd_out_data_available = 0;
+
+always@(negedge spi_sck or posedge SPI_SS_IO) begin : archie_kbd_out
+	if(SPI_SS_IO == 1) begin
+		kbd_out_data_r <= 0;
+		kbd_out_status <= 0;
+	end else begin
+		kbd_out_status <= { 4'ha, 3'b000, kbd_out_data_available };
+		kbd_out_data_r <= kbd_out_data;
+	end
+end
+end
+endgenerate
+
 always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 	reg [31:0] sd_lba_r;
 	reg  [W:0] drive_sel_r;
@@ -466,6 +486,11 @@ always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 
 			spi_byte_out <= 0;
 			case({(!byte_cnt) ? {sbuf, SPI_MOSI} : cmd})
+			8'h04: if (ARCHIE) begin
+					if(byte_cnt == 0) spi_byte_out <= kbd_out_status;
+					else              spi_byte_out <= kbd_out_data_r;
+				end
+
 			// PS2 keyboard command
 			8'h0e: if (byte_cnt == 0) begin
 					ps2_kbd_rx_strobeD <= ps2_kbd_rx_strobe;
@@ -562,6 +587,16 @@ always @(posedge clk_sys) begin : cmd_block
 
 	key_strobe <= 0;
 	mouse_strobe <= 0;
+	if(ARCHIE) begin
+		if (kbd_out_strobe) kbd_out_data_available <= 1;
+		key_pressed <= 0;
+		key_extended <= 0;
+		mouse_x <= 0;
+		mouse_y <= 0;
+		mouse_z <= 0;
+		mouse_flags <= 0;
+		mouse_idx <= 0;
+	end
 
 	if (spi_transfer_end) begin
 		abyte_cnt <= 8'd0;
@@ -577,6 +612,14 @@ always @(posedge clk_sys) begin : cmd_block
 				// accept the incoming mouse data only if there's place for the full packet
 				mouse_fifo_ok <= ps2_mouse_free > 3;
 		end else begin
+			if (ARCHIE) begin
+				if(acmd == 8'h04) kbd_out_data_available <= 0;
+				if(acmd == 8'h05) begin
+					key_strobe <= 1;
+					key_code <= spi_byte_in;
+				end
+			end
+
 			case(acmd)
 				// buttons and switches
 				8'h01: but_sw <= spi_byte_in;
@@ -585,7 +628,7 @@ always @(posedge clk_sys) begin : cmd_block
 				8'h62: if (abyte_cnt < 5) joystick_2[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
 				8'h63: if (abyte_cnt < 5) joystick_3[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
 				8'h64: if (abyte_cnt < 5) joystick_4[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
-				8'h70,8'h71: begin
+				8'h70,8'h71: if (!ARCHIE) begin
 					// store incoming ps2 mouse bytes
 					if (abyte_cnt < 4 && mouse_fifo_ok) begin
 						ps2_mouse_fifo[ps2_mouse_wptr] <= spi_byte_in;
@@ -605,7 +648,7 @@ always @(posedge clk_sys) begin : cmd_block
 						mouse_strobe <= 1;
 					end
 				end
-				8'h05: begin
+				8'h05: if (!ARCHIE) begin
 					// store incoming ps2 keyboard bytes 
 					ps2_kbd_fifo[ps2_kbd_wptr] <= spi_byte_in;
 					ps2_kbd_wptr <= ps2_kbd_wptr + 1'd1;
