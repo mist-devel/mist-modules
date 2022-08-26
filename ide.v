@@ -290,7 +290,7 @@ always @(posedge clk)
 			if (pio_in) begin // reads
 				if (hdd_status_wr && hdd_data_out[4]) 
 					block_mark <= VCC;
-				if (!drq_d & drq & block_mark) begin
+				if ((error | (!drq_d & drq)) & block_mark) begin
 					intreq[dev[1]] <= VCC;
 					block_mark <= GND;
 				end
