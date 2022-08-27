@@ -52,7 +52,9 @@ module data_io
 	// IDE interface
 	input             hdd_clk,
 	input             hdd_cmd_req,
+	input             hdd_cdda_req,
 	input             hdd_dat_req,
+	output reg        hdd_cdda_wr,
 	output reg        hdd_status_wr,
 	output reg  [2:0] hdd_addr = 0,
 	output reg        hdd_wr,
@@ -90,6 +92,7 @@ reg        rclk_ide_regs_rd = 0;
 reg        rclk_ide_regs_wr = 0;
 reg        rclk_ide_wr = 0;
 reg        rclk_ide_rd = 0;
+reg        rclk_cdda_wr = 0;
 reg        addr_reset = 0;
 reg        downloading_reg = 0;
 reg        uploading_reg = 0;
@@ -109,6 +112,8 @@ localparam CMD_IDE_REGS_RD   = 8'h80;
 localparam CMD_IDE_REGS_WR   = 8'h90;
 localparam CMD_IDE_DATA_WR   = 8'hA0;
 localparam CMD_IDE_DATA_RD   = 8'hB0;
+localparam CMD_IDE_CDDA_RD   = 8'hC0;
+localparam CMD_IDE_CDDA_WR   = 8'hD0;
 localparam CMD_IDE_STATUS_WR = 8'hF0;
 localparam CMD_IDE_CFG_WR    = 8'hFA;
 
@@ -129,6 +134,9 @@ always@(negedge SPI_SCK or posedge SPI_SS2) begin : SPI_TRANSMITTER
 				CMD_IDE_REGS_RD,
 				CMD_IDE_DATA_RD:
 					dout_r <= bytecnt[0] ? hdd_data_in[7:0] : hdd_data_in[15:8];
+
+				CMD_IDE_CDDA_RD:
+					dout_r <= {7'd0, hdd_cdda_req};
 
 				DIO_FILE_RX_DAT:
 					dout_r <= ioctl_din;
@@ -197,6 +205,12 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 				if (bytecnt > 4) begin
 					data_w <= {sbuf, SPI_DI};
 					rclk_ide_wr <= ~rclk_ide_wr;
+				end
+
+			CMD_IDE_CDDA_WR:
+				if (bytecnt > 4) begin
+					data_w <= {sbuf, SPI_DI};
+					rclk_cdda_wr <= ~rclk_cdda_wr;
 				end
 
 			CMD_IDE_DATA_RD:
@@ -398,6 +412,7 @@ always@(posedge hdd_clk) begin : IDE_OUT
 	// synchronisers
 	reg rclk2D, rclk2D2;
 	reg rclk_ide_statD, rclk_ide_statD2;
+	reg rclk_cdda_wrD, rclk_cdda_wrD2;
 	reg rclk_ide_wrD, rclk_ide_wrD2;
 	reg rclk_ide_rdD, rclk_ide_rdD2;
 	reg rclk_ide_regs_wrD, rclk_ide_regs_wrD2;
@@ -410,6 +425,7 @@ always@(posedge hdd_clk) begin : IDE_OUT
 	{ rclk_ide_statD, rclk_ide_statD2 } <= { rclk_ide_stat, rclk_ide_statD };
 	{ rclk_ide_rdD, rclk_ide_rdD2 } <= { rclk_ide_rd, rclk_ide_rdD };
 	{ rclk_ide_wrD, rclk_ide_wrD2 } <= { rclk_ide_wr, rclk_ide_wrD };
+	{ rclk_cdda_wrD, rclk_cdda_wrD2 } <= { rclk_cdda_wr, rclk_cdda_wrD };
 	{ rclk_ide_regs_rdD, rclk_ide_regs_rdD2 } <= { rclk_ide_regs_rd, rclk_ide_regs_rdD };
 	{ rclk_ide_regs_wrD, rclk_ide_regs_wrD2 } <= { rclk_ide_regs_wr, rclk_ide_regs_wrD };
 	{ rst0D, rst0D2 } <= { rst0, rst0D };
@@ -420,6 +436,7 @@ always@(posedge hdd_clk) begin : IDE_OUT
 	hdd_status_wr <= 0;
 	hdd_data_wr <= 0;
 	hdd_data_rd <= 0;
+	hdd_cdda_wr <= 0;
 
 	if (rst0D2) hdd_addr <= 0;
 	if (rst0D2 && rst2D2) loword <= 0;
@@ -439,6 +456,15 @@ always@(posedge hdd_clk) begin : IDE_OUT
 			hdd_data_out[15:8] <= data_w;
 		else begin
 			hdd_data_wr <= 1;
+			hdd_data_out[7:0] <= data_w;
+		end
+	end
+	if (rclk_cdda_wrD ^ rclk_cdda_wrD2) begin
+		loword <= ~loword;
+		if (!loword)
+			hdd_data_out[15:8] <= data_w;
+		else begin
+			hdd_cdda_wr <= 1;
 			hdd_data_out[7:0] <= data_w;
 		end
 	end
