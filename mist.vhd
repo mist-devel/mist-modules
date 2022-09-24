@@ -100,7 +100,7 @@ port (
 	SPI_DI      : in std_logic;
 
 	scanlines   : in std_logic_vector(1 downto 0);
-	ce_divider  : in std_logic := '0';
+	ce_divider  : in std_logic_vector(2 downto 0) := "000";
 	scandoubler_disable : in std_logic;
 	ypbpr       : in std_logic;
 	rotate      : in std_logic_vector(1 downto 0);
