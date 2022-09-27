@@ -54,19 +54,19 @@ module data_io
 	input             hdd_cmd_req,
 	input             hdd_cdda_req,
 	input             hdd_dat_req,
-	output reg        hdd_cdda_wr,
-	output reg        hdd_status_wr,
-	output reg  [2:0] hdd_addr = 0,
-	output reg        hdd_wr,
+	output            hdd_cdda_wr,
+	output            hdd_status_wr,
+	output      [2:0] hdd_addr = 0,
+	output            hdd_wr,
 
-	output reg [15:0] hdd_data_out,
+	output     [15:0] hdd_data_out,
 	input      [15:0] hdd_data_in,
-	output reg        hdd_data_rd,
-	output reg        hdd_data_wr,
+	output            hdd_data_rd,
+	output            hdd_data_wr,
 
 	// IDE config
-	output reg  [1:0] hdd0_ena,
-	output reg  [1:0] hdd1_ena
+	output      [1:0] hdd0_ena,
+	output      [1:0] hdd1_ena
 );
 
 parameter START_ADDR = 25'd0;
@@ -76,23 +76,17 @@ parameter ENABLE_IDE = 0;
 
 ///////////////////////////////   DOWNLOADING   ///////////////////////////////
 
+reg  [6:0] sbuf;
 reg  [7:0] data_w;
 reg  [7:0] data_w2  = 0;
 reg  [7:0] data_w3  = 0;
 reg  [3:0] cnt;
 reg  [7:0] cmd;
 reg  [6:0] bytecnt;
+
 reg        rclk   = 0;
-reg        rst0   = 1;
 reg        rclk2  = 0;
-reg        rst2   = 1;
 reg        rclk3  = 0;
-reg        rclk_ide_stat = 0;
-reg        rclk_ide_regs_rd = 0;
-reg        rclk_ide_regs_wr = 0;
-reg        rclk_ide_wr = 0;
-reg        rclk_ide_rd = 0;
-reg        rclk_cdda_wr = 0;
 reg        addr_reset = 0;
 reg        downloading_reg = 0;
 reg        uploading_reg = 0;
@@ -152,15 +146,10 @@ end
 
 
 always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
-	reg  [6:0] sbuf;
-	reg [24:0] addr;
-
 	if(SPI_SS2) begin
 		bytecnt <= 0;
 		cnt <= 0;
-		rst0 <= 1;
 	end	else begin
-		rst0 <= 0;
 		// don't shift in last bit. It is evaluated directly
 		// when writing to ram
 		if(cnt != 15) sbuf <= { sbuf[5:0], SPI_DI};
@@ -177,45 +166,6 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 			else bytecnt[0] <= ~bytecnt[0];
 
 			case (cmd)
-			//IDE commands
-			CMD_IDE_CFG_WR:
-				if (bytecnt == 0) begin
-					hdd0_ena <= {sbuf[0], SPI_DI};
-					hdd1_ena <= sbuf[2:1];
-				end
-
-			CMD_IDE_STATUS_WR:
-				if (bytecnt == 0) begin
-					data_w <= {sbuf, SPI_DI};
-					rclk_ide_stat <= ~rclk_ide_stat;
-				end
-
-			CMD_IDE_REGS_WR:
-				if (bytecnt >= 8 && bytecnt <= 18 && !bytecnt[0]) begin
-					data_w <= {sbuf, SPI_DI};
-					rclk_ide_regs_wr <= ~rclk_ide_regs_wr;
-				end
-
-			CMD_IDE_REGS_RD:
-				if (bytecnt > 5 && !bytecnt[0]) begin
-					rclk_ide_regs_rd <= ~rclk_ide_regs_rd;
-				end
-
-			CMD_IDE_DATA_WR:
-				if (bytecnt > 4) begin
-					data_w <= {sbuf, SPI_DI};
-					rclk_ide_wr <= ~rclk_ide_wr;
-				end
-
-			CMD_IDE_CDDA_WR:
-				if (bytecnt > 4) begin
-					data_w <= {sbuf, SPI_DI};
-					rclk_cdda_wr <= ~rclk_cdda_wr;
-				end
-
-			CMD_IDE_DATA_RD:
-				if (bytecnt > 3) rclk_ide_rd <= ~rclk_ide_rd;
-
 			// prepare/end transmission
 			DIO_FILE_TX: begin
 				// prepare
@@ -266,7 +216,7 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 end
 
 // direct SD Card->FPGA transfer
-generate if (ROM_DIRECT_UPLOAD == 1 || ENABLE_IDE == 1) begin
+generate if (ROM_DIRECT_UPLOAD || ENABLE_IDE) begin
 
 always@(posedge SPI_SCK, posedge SPI_SS4) begin : SPI_DIRECT_RECEIVER
 	reg  [6:0] sbuf2;
@@ -276,9 +226,7 @@ always@(posedge SPI_SCK, posedge SPI_SS4) begin : SPI_DIRECT_RECEIVER
 	if(SPI_SS4) begin
 		cnt2 <= 0;
 		bytecnt <= 0;
-		rst2 <= 1;
 	end else begin
-		rst2 <= 0;
 		// don't shift in last bit. It is evaluated directly
 		// when writing to ram
 		if(cnt2 != 7)
@@ -304,7 +252,7 @@ end
 endgenerate
 
 // QSPI receiver
-generate if (USE_QSPI == 1) begin
+generate if (USE_QSPI) begin
 
 always@(negedge QSCK, posedge QCSn) begin : QSPI_RECEIVER
 	reg nibble_lo;
@@ -404,7 +352,99 @@ always@(posedge clk_sys) begin : DATA_OUT
 
 end
 
-generate if (ENABLE_IDE == 1) begin
+// IDE handling
+generate if (ENABLE_IDE) begin
+
+reg  [1:0] int_hdd0_ena;
+reg  [1:0] int_hdd1_ena;
+reg        int_hdd_cdda_wr;
+reg        int_hdd_status_wr;
+reg  [2:0] int_hdd_addr = 0;
+reg        int_hdd_wr;
+reg [15:0] int_hdd_data_out;
+reg        int_hdd_data_rd;
+reg        int_hdd_data_wr;
+
+assign hdd0_ena = int_hdd0_ena;
+assign hdd1_ena = int_hdd1_ena;
+assign hdd_cdda_wr = int_hdd_cdda_wr;
+assign hdd_status_wr = int_hdd_status_wr;
+assign hdd_addr = int_hdd_addr;
+assign hdd_wr = int_hdd_wr;
+assign hdd_data_out = int_hdd_data_out;
+assign hdd_data_rd = int_hdd_data_rd;
+assign hdd_data_wr = int_hdd_data_wr;
+
+reg        rst0  = 1;
+reg        rst2  = 1;
+reg        rclk_ide_stat = 0;
+reg        rclk_ide_regs_rd = 0;
+reg        rclk_ide_regs_wr = 0;
+reg        rclk_ide_wr = 0;
+reg        rclk_ide_rd = 0;
+reg        rclk_cdda_wr = 0;
+reg  [7:0] data_ide;
+
+always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER_IDE
+	if(SPI_SS2) begin
+		rst0 <= 1;
+	end	else begin
+		rst0 <= 0;
+
+		if(cnt == 15) begin
+
+			case (cmd)
+			//IDE commands
+			CMD_IDE_CFG_WR:
+				if (bytecnt == 0) begin
+					int_hdd0_ena <= {sbuf[0], SPI_DI};
+					int_hdd1_ena <= sbuf[2:1];
+				end
+
+			CMD_IDE_STATUS_WR:
+				if (bytecnt == 0) begin
+					data_ide <= {sbuf, SPI_DI};
+					rclk_ide_stat <= ~rclk_ide_stat;
+				end
+
+			CMD_IDE_REGS_WR:
+				if (bytecnt >= 8 && bytecnt <= 18 && !bytecnt[0]) begin
+					data_ide <= {sbuf, SPI_DI};
+					rclk_ide_regs_wr <= ~rclk_ide_regs_wr;
+				end
+
+			CMD_IDE_REGS_RD:
+				if (bytecnt > 5 && !bytecnt[0]) begin
+					rclk_ide_regs_rd <= ~rclk_ide_regs_rd;
+				end
+
+			CMD_IDE_DATA_WR:
+				if (bytecnt > 4) begin
+					data_ide <= {sbuf, SPI_DI};
+					rclk_ide_wr <= ~rclk_ide_wr;
+				end
+
+			CMD_IDE_CDDA_WR:
+				if (bytecnt > 4) begin
+					data_ide <= {sbuf, SPI_DI};
+					rclk_cdda_wr <= ~rclk_cdda_wr;
+				end
+
+			CMD_IDE_DATA_RD:
+				if (bytecnt > 3) rclk_ide_rd <= ~rclk_ide_rd;
+
+			endcase
+		end
+	end
+end
+
+always@(posedge SPI_SCK, posedge SPI_SS4) begin : SPI_DIRECT_RECEIVER_IDE
+	if(SPI_SS4) begin
+		rst2 <= 1;
+	end else begin
+		rst2 <= 0;
+	end
+end
 
 always@(posedge hdd_clk) begin : IDE_OUT
 	reg loword;
@@ -432,61 +472,72 @@ always@(posedge hdd_clk) begin : IDE_OUT
 	{ rst2D, rst2D2 } <= { rst2, rst2D };
 
 	// IDE receiver
-	hdd_wr <= 0;
-	hdd_status_wr <= 0;
-	hdd_data_wr <= 0;
-	hdd_data_rd <= 0;
-	hdd_cdda_wr <= 0;
+	int_hdd_wr <= 0;
+	int_hdd_status_wr <= 0;
+	int_hdd_data_wr <= 0;
+	int_hdd_data_rd <= 0;
+	int_hdd_cdda_wr <= 0;
 
-	if (rst0D2) hdd_addr <= 0;
+	if (rst0D2) int_hdd_addr <= 0;
 	if (rst0D2 && rst2D2) loword <= 0;
 
 	if (rclk_ide_statD ^ rclk_ide_statD2) begin
-		hdd_status_wr <= 1;
-		hdd_data_out <= {8'h00, data_w};
+		int_hdd_status_wr <= 1;
+		int_hdd_data_out <= {8'h00, data_ide};
 	end
 	if (rclk_ide_rdD ^ rclk_ide_rdD2) begin
 		loword <= ~loword;
 		if (loword)
-			hdd_data_rd <= 1;
+			int_hdd_data_rd <= 1;
 	end
 	if (rclk_ide_wrD ^ rclk_ide_wrD2) begin
 		loword <= ~loword;
 		if (!loword)
-			hdd_data_out[15:8] <= data_w;
+			int_hdd_data_out[15:8] <= data_ide;
 		else begin
-			hdd_data_wr <= 1;
-			hdd_data_out[7:0] <= data_w;
+			int_hdd_data_wr <= 1;
+			int_hdd_data_out[7:0] <= data_ide;
 		end
 	end
 	if (rclk_cdda_wrD ^ rclk_cdda_wrD2) begin
 		loword <= ~loword;
 		if (!loword)
-			hdd_data_out[15:8] <= data_w;
+			int_hdd_data_out[15:8] <= data_ide;
 		else begin
-			hdd_cdda_wr <= 1;
-			hdd_data_out[7:0] <= data_w;
+			int_hdd_cdda_wr <= 1;
+			int_hdd_data_out[7:0] <= data_ide;
 		end
 	end
 	if (rclk2D ^ rclk2D2 && !downloading_reg) begin
 		loword <= ~loword;
 		if (!loword)
-			hdd_data_out[15:8] <= data_w2;
+			int_hdd_data_out[15:8] <= data_w2;
 		else begin
-			hdd_data_wr <= 1;
-			hdd_data_out[7:0] <= data_w2;
+			int_hdd_data_wr <= 1;
+			int_hdd_data_out[7:0] <= data_w2;
 		end
 	end
 	if (rclk_ide_regs_wrD ^ rclk_ide_regs_wrD2) begin
-		hdd_wr <= 1;
-		hdd_data_out <= {8'h00, data_w};
-		hdd_addr <= hdd_addr + 1'd1;
+		int_hdd_wr <= 1;
+		int_hdd_data_out <= {8'h00, data_ide};
+		int_hdd_addr <= int_hdd_addr + 1'd1;
 	end
 	if (rclk_ide_regs_rdD ^ rclk_ide_regs_rdD2) begin
-		hdd_addr <= hdd_addr + 1'd1;
+		int_hdd_addr <= int_hdd_addr + 1'd1;
 	end
 end
+end else begin
+	assign hdd0_ena = 0;
+	assign hdd1_ena = 0;
+	assign hdd_cdda_wr = 0;
+	assign hdd_status_wr = 0;
+	assign hdd_addr = 0;
+	assign hdd_wr = 0;
+	assign hdd_data_out = 0;
+	assign hdd_data_rd = 0;
+	assign hdd_data_wr = 0;
 end
+
 endgenerate
 
 endmodule
