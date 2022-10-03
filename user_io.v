@@ -73,11 +73,11 @@ module user_io (
 
 	// ps2 keyboard/mouse emulation
 	output              ps2_kbd_clk,
-	output reg          ps2_kbd_data,
+	output              ps2_kbd_data,
 	input               ps2_kbd_clk_i,
 	input               ps2_kbd_data_i,
 	output              ps2_mouse_clk,
-	output reg          ps2_mouse_data,
+	output              ps2_mouse_data,
 	input               ps2_mouse_clk_i,
 	input               ps2_mouse_data_i,
 
@@ -144,9 +144,6 @@ wire [7:0] sd_cmd = { 4'h6, sd_conf, sd_sdhc, sd_wr[drive_sel], sd_rd[drive_sel]
 wire spi_sck = SPI_CLK;
 
 // ---------------- PS2 ---------------------
-// 16 byte fifos to store ps2 bytes
-localparam PS2_FIFO_BITS = 4;
-
 reg ps2_clk;
 always @(posedge clk_sys) begin
 	integer cnt;
@@ -158,241 +155,44 @@ always @(posedge clk_sys) begin
 end
 
 // keyboard
-reg [7:0] ps2_kbd_fifo [(2**PS2_FIFO_BITS)-1:0];
-reg [PS2_FIFO_BITS-1:0] ps2_kbd_wptr;
-reg [PS2_FIFO_BITS-1:0] ps2_kbd_rptr;
+reg        ps2_kbd_tx_strobe;
+wire [7:0] ps2_kbd_rx_byte ;
+wire       ps2_kbd_rx_strobe;
+wire       ps2_kbd_fifo_ok;
 
-// ps2 transmitter state machine
-reg [3:0] ps2_kbd_tx_state;
-reg [7:0] ps2_kbd_tx_byte;
-reg ps2_kbd_parity;
-
-// ps2 receiver state machine
-reg [3:0] ps2_kbd_rx_state = 0;
-reg [1:0] ps2_kbd_rx_start = 0;
-reg [7:0] ps2_kbd_rx_byte = 0;
-reg       ps2_kbd_rx_strobe = 0;
-
-assign ps2_kbd_clk = ps2_clk || (ps2_kbd_tx_state == 0 && ps2_kbd_rx_state == 0);
-
-// ps2 transmitter/receiver
-// Takes a byte from the FIFO and sends it in a ps2 compliant serial format.
-// Sends a command to the IO controller if bidirectional mode is enabled.
-always@(posedge clk_sys) begin : ps2_kbd
-
-	reg ps2_clkD;
-	reg ps2_clk_iD, ps2_dat_iD;
-	reg ps2_kbd_r_inc;
-
-	// send data
-	ps2_clkD <= ps2_clk;
-	if (~ps2_clkD & ps2_clk) begin
-		ps2_kbd_r_inc <= 1'b0;
-
-		if(ps2_kbd_r_inc)
-			ps2_kbd_rptr <= ps2_kbd_rptr + 1'd1;
-
-		// transmitter is idle?
-		if(ps2_kbd_tx_state == 0) begin
-			ps2_kbd_data <= 1;
-			// data in fifo present?
-			if(ps2_kbd_wptr != ps2_kbd_rptr && (ps2_kbd_clk_i | !PS2BIDIR)) begin
-				// load tx register from fifo
-				ps2_kbd_tx_byte <= ps2_kbd_fifo[ps2_kbd_rptr];
-				ps2_kbd_r_inc <= 1'b1;
-
-				// reset parity
-				ps2_kbd_parity <= 1'b1;
-
-				// start transmitter
-				ps2_kbd_tx_state <= 4'd1;
-
-				// put start bit on data line
-				ps2_kbd_data <= 1'b0;			// start bit is 0
-			end
-		end else begin
-
-			// transmission of 8 data bits
-			if((ps2_kbd_tx_state >= 1)&&(ps2_kbd_tx_state < 9)) begin
-				ps2_kbd_data <= ps2_kbd_tx_byte[0];			  // data bits
-				ps2_kbd_tx_byte[6:0] <= ps2_kbd_tx_byte[7:1]; // shift down
-				if(ps2_kbd_tx_byte[0]) 
-					ps2_kbd_parity <= !ps2_kbd_parity;
-			end
-
-			// transmission of parity
-			if(ps2_kbd_tx_state == 9)
-				ps2_kbd_data <= ps2_kbd_parity;
-			
-			// transmission of stop bit
-			if(ps2_kbd_tx_state == 10)
-				ps2_kbd_data <= 1'b1;			// stop bit is 1
-
-			// advance state machine
-			if(ps2_kbd_tx_state < 11)
-				ps2_kbd_tx_state <= ps2_kbd_tx_state + 4'd1;
-			else	
-				ps2_kbd_tx_state <= 4'd0;
-		end
-	end
-
-	if (PS2BIDIR) begin
-		ps2_clk_iD <= ps2_kbd_clk_i;
-		ps2_dat_iD <= ps2_kbd_data_i;
-
-		// receive command
-		case (ps2_kbd_rx_start)
-		2'd0:
-			// first: host pulls down the clock line
-			if (ps2_clk_iD & ~ps2_kbd_clk_i) ps2_kbd_rx_start <= 1;
-		2'd1:
-			// second: host pulls down the data line, while releasing the clock
-			if (ps2_dat_iD && !ps2_kbd_data_i) ps2_kbd_rx_start <= 2'd2;
-			// if it releases the clock without pulling down the data line: goto 0
-			else if (ps2_kbd_clk_i) ps2_kbd_rx_start <= 0;
-		2'd2:
-			if (ps2_clkD && ~ps2_clk) begin
-				ps2_kbd_rx_state <= 4'd1;
-				ps2_kbd_rx_start <= 0;
-			end
-		default: ;
-		endcase
-
-		// host data is valid after the rising edge of the clock
-		if(ps2_kbd_rx_state != 0 && ~ps2_clkD && ps2_clk) begin
-			ps2_kbd_rx_state <= ps2_kbd_rx_state + 1'd1;
-			if (ps2_kbd_rx_state == 9) ;// parity
-			else if (ps2_kbd_rx_state == 10) begin
-				ps2_kbd_data <= 0; // ack the received byte
-			end else if (ps2_kbd_rx_state == 11) begin
-				ps2_kbd_rx_state <= 0;
-				ps2_kbd_rx_strobe <= ~ps2_kbd_rx_strobe;
-			end else begin
-				ps2_kbd_rx_byte <= {ps2_kbd_data_i, ps2_kbd_rx_byte[7:1]};
-			end
-		end
-	end
-end
+user_io_ps2 #(.PS2_BIDIR(PS2BIDIR), .PS2_FIFO_BITS(4)) ps2_kbd (
+	.clk_sys       ( clk_sys ),
+	.ps2_clk       ( ps2_clk ),
+	.ps2_clk_i     ( ps2_kbd_clk_i ),
+	.ps2_clk_o     ( ps2_kbd_clk ),
+	.ps2_data_i    ( ps2_kbd_data_i ),
+	.ps2_data_o    ( ps2_kbd_data ),
+	.ps2_tx_strobe ( ps2_kbd_tx_strobe ), // from IO controller
+	.ps2_tx_byte   ( spi_byte_in ),
+	.ps2_rx_strobe ( ps2_kbd_rx_strobe ), // to IO controller
+	.ps2_rx_byte   ( ps2_kbd_rx_byte ),
+	.ps2_fifo_ready( ps2_kbd_fifo_ok )
+);
 
 // mouse
-reg [7:0] ps2_mouse_fifo [(2**PS2_FIFO_BITS)-1:0];
-reg [PS2_FIFO_BITS-1:0] ps2_mouse_wptr;
-reg [PS2_FIFO_BITS-1:0] ps2_mouse_rptr;
-wire [PS2_FIFO_BITS:0] ps2_mouse_used = ps2_mouse_wptr >= ps2_mouse_rptr ?
-                                        ps2_mouse_wptr - ps2_mouse_rptr :
-                                        ps2_mouse_wptr - ps2_mouse_rptr + (2'd2**PS2_FIFO_BITS);
-wire [PS2_FIFO_BITS:0] ps2_mouse_free = (2'd2**PS2_FIFO_BITS) - ps2_mouse_used;
+reg        ps2_mouse_tx_strobe;
+wire [7:0] ps2_mouse_rx_byte ;
+wire       ps2_mouse_rx_strobe;
+wire       ps2_mouse_fifo_ok;
 
-// ps2 transmitter state machine
-reg [3:0] ps2_mouse_tx_state;
-reg [7:0] ps2_mouse_tx_byte;
-reg ps2_mouse_parity;
-
-// ps2 receiver state machine
-reg [3:0] ps2_mouse_rx_state = 0;
-reg [1:0] ps2_mouse_rx_start = 0;
-reg [7:0] ps2_mouse_rx_byte = 0;
-reg       ps2_mouse_rx_strobe = 0;
-
-assign ps2_mouse_clk = ps2_clk || (ps2_mouse_tx_state == 0 && ps2_mouse_rx_state == 0);
-
-// ps2 transmitter/receiver
-// Takes a byte from the FIFO and sends it in a ps2 compliant serial format.
-// Sends a command to the IO controller if bidirectional mode is enabled.
-always@(posedge clk_sys) begin : ps2_mouse
-	reg ps2_clkD;
-	reg ps2_clk_iD, ps2_dat_iD;
-	reg ps2_mouse_r_inc;
-
-	ps2_clkD <= ps2_clk;
-	if (~ps2_clkD & ps2_clk) begin
-		ps2_mouse_r_inc <= 1'b0;
-
-		if(ps2_mouse_r_inc)
-			ps2_mouse_rptr <= ps2_mouse_rptr + 1'd1;
-
-		// transmitter is idle?
-		if(ps2_mouse_tx_state == 0) begin
-			ps2_mouse_data <= 1;
-			// data in fifo present?
-			if(ps2_mouse_wptr != ps2_mouse_rptr && (ps2_mouse_clk_i | !PS2BIDIR)) begin
-				// load tx register from fifo
-				ps2_mouse_tx_byte <= ps2_mouse_fifo[ps2_mouse_rptr];
-				ps2_mouse_r_inc <= 1'b1;
-
-				// reset parity
-				ps2_mouse_parity <= 1'b1;
-
-				// start transmitter
-				ps2_mouse_tx_state <= 4'd1;
-
-				// put start bit on data line
-				ps2_mouse_data <= 1'b0;			// start bit is 0
-			end
-		end else begin
-
-			// transmission of 8 data bits
-			if((ps2_mouse_tx_state >= 1)&&(ps2_mouse_tx_state < 9)) begin
-				ps2_mouse_data <= ps2_mouse_tx_byte[0];			  // data bits
-				ps2_mouse_tx_byte[6:0] <= ps2_mouse_tx_byte[7:1]; // shift down
-				if(ps2_mouse_tx_byte[0]) 
-					ps2_mouse_parity <= !ps2_mouse_parity;
-			end
-
-			// transmission of parity
-			if(ps2_mouse_tx_state == 9)
-				ps2_mouse_data <= ps2_mouse_parity;
-
-			// transmission of stop bit
-			if(ps2_mouse_tx_state == 10)
-				ps2_mouse_data <= 1'b1;			// stop bit is 1
-
-			// advance state machine
-			if(ps2_mouse_tx_state < 11)
-				ps2_mouse_tx_state <= ps2_mouse_tx_state + 4'd1;
-			else	
-				ps2_mouse_tx_state <= 4'd0;
-		end
-	end
-
-	if (PS2BIDIR) begin
-
-		ps2_clk_iD <= ps2_mouse_clk_i;
-		ps2_dat_iD <= ps2_mouse_data_i;
-
-		// receive command
-		case (ps2_mouse_rx_start)
-		2'd0:
-			// first: host pulls down the clock line
-			if (ps2_clk_iD & ~ps2_mouse_clk_i) ps2_mouse_rx_start <= 1;
-		2'd1:
-			// second: host pulls down the data line, while releasing the clock
-			if (ps2_dat_iD && !ps2_mouse_data_i) ps2_mouse_rx_start <= 2'd2;
-			// if it releases the clock without pulling down the data line: goto 0
-			else if (ps2_mouse_clk_i) ps2_mouse_rx_start <= 0;
-		2'd2:
-			if (ps2_clkD && ~ps2_clk) begin
-				ps2_mouse_rx_state <= 4'd1;
-				ps2_mouse_rx_start <= 0;
-			end
-		default: ;
-		endcase
-
-		// host data is valid after the rising edge of the clock
-		if(ps2_mouse_rx_state != 0 && ~ps2_clkD && ps2_clk) begin
-			ps2_mouse_rx_state <= ps2_mouse_rx_state + 1'd1;
-			if (ps2_mouse_rx_state == 9) ;// parity
-			else if (ps2_mouse_rx_state == 10) begin
-				ps2_mouse_data <= 0; // ack the received byte
-			end else if (ps2_mouse_rx_state == 11) begin
-				ps2_mouse_rx_state <= 0;
-				ps2_mouse_rx_strobe <= ~ps2_mouse_rx_strobe;
-			end else begin
-				ps2_mouse_rx_byte <= {ps2_mouse_data_i, ps2_mouse_rx_byte[7:1]};
-			end
-		end
-	end
-end
+user_io_ps2 #(.PS2_BIDIR(PS2BIDIR), .PS2_FIFO_BITS(3)) ps2_mouse (
+	.clk_sys       ( clk_sys ),
+	.ps2_clk       ( ps2_clk ),
+	.ps2_clk_i     ( ps2_mouse_clk_i ),
+	.ps2_clk_o     ( ps2_mouse_clk ),
+	.ps2_data_i    ( ps2_mouse_data_i ),
+	.ps2_data_o    ( ps2_mouse_data ),
+	.ps2_tx_strobe ( ps2_mouse_tx_strobe ), // from IO controller
+	.ps2_tx_byte   ( spi_byte_in ),
+	.ps2_rx_strobe ( ps2_mouse_rx_strobe ), // to IO controller
+	.ps2_rx_byte   ( ps2_mouse_rx_byte ),
+	.ps2_fifo_ready( ps2_mouse_fifo_ok )
+);
 
 // fifo to receive serial data from core to be forwarded to io controller
 
@@ -569,13 +369,14 @@ always @(posedge clk_sys) begin : cmd_block
 	reg       spi_receiver_strobeD;
 	reg       spi_transfer_endD;
 	reg [7:0] acmd;
-	reg [7:0] abyte_cnt;   // counts bytes
+	reg [3:0] abyte_cnt;   // counts bytes
 
 	reg [7:0] mouse_flags_r;
 	reg [7:0] mouse_x_r;
 	reg [7:0] mouse_y_r;
 	reg       mouse_fifo_ok;
 
+	reg       kbd_fifo_ok;
 	reg       key_pressed_r;
 	reg       key_extended_r;
 
@@ -587,6 +388,9 @@ always @(posedge clk_sys) begin : cmd_block
 
 	key_strobe <= 0;
 	mouse_strobe <= 0;
+	ps2_kbd_tx_strobe <= 0;
+	ps2_mouse_tx_strobe <= 0;
+
 	if(ARCHIE) begin
 		if (kbd_out_strobe) kbd_out_data_available <= 1;
 		key_pressed <= 0;
@@ -599,18 +403,22 @@ always @(posedge clk_sys) begin : cmd_block
 	end
 
 	if (spi_transfer_end) begin
-		abyte_cnt <= 8'd0;
+		abyte_cnt <= 0;
 		mouse_fifo_ok <= 0;
+		kbd_fifo_ok <= 0;
 	end else if (spi_receiver_strobeD ^ spi_receiver_strobe) begin
 
 		if(~&abyte_cnt) 
-			abyte_cnt <= abyte_cnt + 8'd1;
+			abyte_cnt <= abyte_cnt + 1'd1;
 
 		if(abyte_cnt == 0) begin
 			acmd <= spi_byte_in;
 			if (spi_byte_in == 8'h70 || spi_byte_in == 8'h71)
 				// accept the incoming mouse data only if there's place for the full packet
-				mouse_fifo_ok <= ps2_mouse_free > 3;
+				mouse_fifo_ok <= ps2_mouse_fifo_ok;
+			if (spi_byte_in == 8'h05)
+				// accept the incoming keyboard data only if there's place for the full packet
+				kbd_fifo_ok <= ps2_kbd_fifo_ok;
 		end else begin
 			if (ARCHIE) begin
 				if(acmd == 8'h04) kbd_out_data_available <= 0;
@@ -631,8 +439,7 @@ always @(posedge clk_sys) begin : cmd_block
 				8'h70,8'h71: if (!ARCHIE) begin
 					// store incoming ps2 mouse bytes
 					if (abyte_cnt < 4 && mouse_fifo_ok) begin
-						ps2_mouse_fifo[ps2_mouse_wptr] <= spi_byte_in;
-						ps2_mouse_wptr <= ps2_mouse_wptr + 1'd1;
+						ps2_mouse_tx_strobe <= 1;
 					end
 
 					if (abyte_cnt == 1) mouse_flags_r <= spi_byte_in;
@@ -649,9 +456,8 @@ always @(posedge clk_sys) begin : cmd_block
 					end
 				end
 				8'h05: if (!ARCHIE) begin
-					// store incoming ps2 keyboard bytes 
-					ps2_kbd_fifo[ps2_kbd_wptr] <= spi_byte_in;
-					ps2_kbd_wptr <= ps2_kbd_wptr + 1'd1;
+					// store incoming ps2 keyboard bytes
+					if (kbd_fifo_ok) ps2_kbd_tx_strobe <= 1;
 					if (abyte_cnt == 1) begin
 						key_extended_r <= 0;
 						key_pressed_r <= 1;
@@ -799,6 +605,154 @@ always @(posedge clk_sd) begin : sd_block
 
 			endcase
 		end
+	end
+end
+
+endmodule
+
+module user_io_ps2 (
+	input       clk_sys,
+	input       ps2_clk,
+	input       ps2_clk_i,
+	output      ps2_clk_o,
+	input       ps2_data_i,
+	output  reg ps2_data_o = 1,
+	input       ps2_tx_strobe, // from IO controller
+	input [7:0] ps2_tx_byte,
+	output  reg ps2_rx_strobe = 0,  // to IO controller
+	output  reg [7:0] ps2_rx_byte = 0,
+	output      ps2_fifo_ready
+);
+
+parameter PS2_FIFO_BITS = 4;
+parameter PS2_BIDIR = 0;
+
+reg  [7:0] ps2_fifo [(2**PS2_FIFO_BITS)-1:0];
+reg  [PS2_FIFO_BITS-1:0] ps2_wptr;
+reg  [PS2_FIFO_BITS-1:0] ps2_rptr;
+wire [PS2_FIFO_BITS:0] ps2_used = ps2_wptr >= ps2_rptr ?
+                                        ps2_wptr - ps2_rptr :
+                                        ps2_wptr - ps2_rptr + (2'd2**PS2_FIFO_BITS);
+wire [PS2_FIFO_BITS:0] ps2_free = (2'd2**PS2_FIFO_BITS) - ps2_used;
+
+assign ps2_fifo_ready = ps2_free[PS2_FIFO_BITS:2] != 0; // ps2_free > 3
+
+// ps2 transmitter state machine
+reg  [3:0] ps2_tx_state;
+reg  [7:0] ps2_tx_shift_reg;
+reg        ps2_parity;
+
+// ps2 receiver state machine
+reg  [3:0] ps2_rx_state = 0;
+reg  [1:0] ps2_rx_start = 0;
+
+assign     ps2_clk_o = ps2_clk || (ps2_tx_state == 0 && ps2_rx_state == 0);
+
+always@(posedge clk_sys) begin : ps2_fifo_wr
+	if (ps2_tx_strobe) begin
+		ps2_fifo[ps2_wptr] <= ps2_tx_byte;
+		ps2_wptr <= ps2_wptr + 1'd1;
+	end
+end
+
+// ps2 transmitter/receiver
+// Takes a byte from the FIFO and sends it in a ps2 compliant serial format.
+// Sends a command to the IO controller if bidirectional mode is enabled.
+always@(posedge clk_sys) begin : ps2_txrx
+	reg ps2_clkD;
+	reg ps2_clk_iD, ps2_dat_iD;
+	reg ps2_r_inc;
+
+	ps2_clkD <= ps2_clk;
+	if (~ps2_clkD & ps2_clk) begin
+		ps2_r_inc <= 1'b0;
+
+		if(ps2_r_inc)
+			ps2_rptr <= ps2_rptr + 1'd1;
+
+		// transmitter is idle?
+		if(ps2_tx_state == 0) begin
+			ps2_data_o <= 1;
+			// data in fifo present?
+			if(ps2_wptr != ps2_rptr && (ps2_clk_i | !PS2_BIDIR)) begin
+				// load tx register from fifo
+				ps2_tx_shift_reg <= ps2_fifo[ps2_rptr];
+				ps2_r_inc <= 1'b1;
+
+				// reset parity
+				ps2_parity <= 1'b1;
+
+				// start transmitter
+				ps2_tx_state <= 4'd1;
+
+				// put start bit on data line
+				ps2_data_o <= 1'b0; // start bit is 0
+			end
+		end else begin
+
+			// transmission of 8 data bits
+			if((ps2_tx_state >= 1)&&(ps2_tx_state < 9)) begin
+				ps2_data_o <= ps2_tx_shift_reg[0]; // data bits
+				ps2_tx_shift_reg[6:0] <= ps2_tx_shift_reg[7:1]; // shift down
+				if(ps2_tx_shift_reg[0]) 
+					ps2_parity <= !ps2_parity;
+			end
+
+			// transmission of parity
+			if(ps2_tx_state == 9)
+				ps2_data_o <= ps2_parity;
+
+			// transmission of stop bit
+			if(ps2_tx_state == 10)
+				ps2_data_o <= 1'b1; // stop bit is 1
+
+			// advance state machine
+			if(ps2_tx_state == 11)
+				ps2_tx_state <= 4'd0;
+			else
+				ps2_tx_state <= ps2_tx_state + 4'd1;
+		end
+	end
+
+	if (PS2_BIDIR) begin
+
+		ps2_clk_iD <= ps2_clk_i;
+		ps2_dat_iD <= ps2_data_i;
+
+		// receive command
+		case (ps2_rx_start)
+		2'd0:
+			// first: host pulls down the clock line
+			if (ps2_clk_iD & ~ps2_clk_i) ps2_rx_start <= 1;
+		2'd1:
+			// second: host pulls down the data line, while releasing the clock
+			if (ps2_dat_iD && !ps2_data_i) ps2_rx_start <= 2'd2;
+			// if it releases the clock without pulling down the data line: goto 0
+			else if (ps2_clk_i) ps2_rx_start <= 0;
+		2'd2:
+			if (ps2_clkD && ~ps2_clk) begin
+				ps2_rx_state <= 4'd1;
+				ps2_rx_start <= 0;
+			end
+		default: ;
+		endcase
+
+		// host data is valid after the rising edge of the clock
+		if(ps2_rx_state != 0 && ~ps2_clkD && ps2_clk) begin
+			ps2_rx_state <= ps2_rx_state + 1'd1;
+			if (ps2_rx_state == 9) ;// parity
+			else if (ps2_rx_state == 10) begin
+				ps2_data_o <= 0; // ack the received byte
+			end else if (ps2_rx_state == 11) begin
+				ps2_rx_state <= 0;
+				ps2_rx_strobe <= ~ps2_rx_strobe;
+			end else begin
+				ps2_rx_byte <= {ps2_data_i, ps2_rx_byte[7:1]};
+			end
+		end
+	end else begin
+		ps2_rx_byte <= 0;
+		ps2_rx_strobe <= 0;
 	end
 end
 
