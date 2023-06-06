@@ -43,7 +43,7 @@ module data_io
 	                                      // Note: this is also set for user_io mounts.
 	                                      // Valid when ioctl_download = 1 or when img_mounted strobe is active in user_io.
 	output reg        ioctl_wr,           // strobe indicating ioctl_dout valid
-	output reg [24:0] ioctl_addr,
+	output reg [26:0] ioctl_addr,
 	output reg  [7:0] ioctl_dout,
 	input       [7:0] ioctl_din,
 	output reg [23:0] ioctl_fileext,      // file extension
@@ -69,7 +69,7 @@ module data_io
 	output      [1:0] hdd1_ena
 );
 
-parameter START_ADDR = 25'd0;
+parameter START_ADDR = 27'd0;
 parameter ROM_DIRECT_UPLOAD = 0;
 parameter USE_QSPI = 0;
 parameter ENABLE_IDE = 0;
@@ -288,7 +288,7 @@ always@(posedge clk_sys) begin : DATA_OUT
 	reg addr_resetD, addr_resetD2;
 
 	reg wr_int, wr_int_direct, wr_int_qspi, rd_int;
-	reg [24:0] addr;
+	reg [26:0] addr;
 	reg [31:0] filepos;
 
 	// bring flags from spi clock domain into core clock domain
