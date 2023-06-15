@@ -145,8 +145,6 @@ assign vb_out = bypass ? vb_in : vb_o;
 assign hs_out = bypass ? hs_in : hs_o;
 assign vs_out = bypass ? vs_in : vs_o;
 
-assign pixel_ena = bypass ? ce_x1 : ce_x2;
-
 
 // scan doubler output register
 reg [3+COLOR_DEPTH*3-1:0] sd_out;
@@ -270,5 +268,11 @@ always @(posedge clk_sys) begin
 	if(sd_synccnt == hs_rise) hs_sd <= 1;
 
 end
+
+wire ce_x4 = sd_i_div[0]; // Faster pixel_ena for higher subdivisions to prevent blending from becoming to coarse.
+
+assign pixel_ena = ce_divider_out > 3'd5 ? 
+		bypass ? ce_x2 : ce_x4 :
+		bypass ? ce_x1 : ce_x2 ;
 
 endmodule
