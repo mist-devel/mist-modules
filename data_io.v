@@ -44,7 +44,7 @@ module data_io
 	                                      // Valid when ioctl_download = 1 or when img_mounted strobe is active in user_io.
 	output reg        ioctl_wr,           // strobe indicating ioctl_dout valid
 	output reg [26:0] ioctl_addr,
-	output reg  [7:0] ioctl_dout,
+	output reg [((DOUT_16+1)*8)-1:0] ioctl_dout,
 	input       [7:0] ioctl_din,
 	output reg [23:0] ioctl_fileext,      // file extension
 	output reg [31:0] ioctl_filesize,     // file size
@@ -70,9 +70,10 @@ module data_io
 );
 
 parameter START_ADDR = 27'd0;
-parameter ROM_DIRECT_UPLOAD = 0;
-parameter USE_QSPI = 0;
-parameter ENABLE_IDE = 0;
+parameter ROM_DIRECT_UPLOAD = 1'b0;
+parameter USE_QSPI = 1'b0;
+parameter ENABLE_IDE = 1'b0;
+parameter DOUT_16 = 1'b0;
 
 ///////////////////////////////   DOWNLOADING   ///////////////////////////////
 
@@ -118,12 +119,14 @@ wire [7:0] cmdcode = { 4'h0, hdd_dat_req, hdd_cmd_req, 2'b00 };
 
 always@(negedge SPI_SCK or posedge SPI_SS2) begin : SPI_TRANSMITTER
 	reg [7:0] dout_r;
+	reg oe;
 
 	if(SPI_SS2) begin
+		oe <= 0;
 		reg_do <= 1'bZ;
 	end else begin
-		if (cnt == 0) dout_r <= cmdcode;
 		if (cnt == 15) begin
+			oe <= 1;
 			case(cmd)
 				CMD_IDE_REGS_RD,
 				CMD_IDE_DATA_RD:
@@ -135,12 +138,11 @@ always@(negedge SPI_SCK or posedge SPI_SS2) begin : SPI_TRANSMITTER
 				DIO_FILE_RX_DAT:
 					dout_r <= ioctl_din;
 
-				default:
-					dout_r <= 0;
-
+				default: oe <= 0;
 			endcase
 		end
-		reg_do <= dout_r[~cnt[2:0]];
+
+		reg_do <= (!cnt[3] & ENABLE_IDE) ? cmdcode[~cnt[2:0]] : oe ? dout_r[~cnt[2:0]] : 1'bZ;
 	end
 end
 
@@ -280,6 +282,9 @@ end
 end
 endgenerate
 
+reg         wr_int, wr_int_direct, wr_int_qspi, rd_int;
+wire  [7:0] ioctl_dout_next = wr_int ? data_w : wr_int_direct ? data_w2 : data_w3;
+
 always@(posedge clk_sys) begin : DATA_OUT
 	// synchronisers
 	reg rclkD, rclkD2;
@@ -287,9 +292,9 @@ always@(posedge clk_sys) begin : DATA_OUT
 	reg rclk3D, rclk3D2;
 	reg addr_resetD, addr_resetD2;
 
-	reg wr_int, wr_int_direct, wr_int_qspi, rd_int;
 	reg [26:0] addr;
 	reg [31:0] filepos;
+	reg  [7:0] tmp;
 
 	// bring flags from spi clock domain into core clock domain
 	{ rclkD, rclkD2 } <= { rclk, rclkD };
@@ -316,10 +321,19 @@ always@(posedge clk_sys) begin : DATA_OUT
 		wr_int_direct <= 0;
 		wr_int_qspi <= 0;
 		if (wr_int || wr_int_direct || wr_int_qspi) begin
-			ioctl_dout <= wr_int ? data_w : wr_int_direct ? data_w2 : data_w3;
-			ioctl_wr <= 1;
+			if (DOUT_16) begin
+				if (addr[0]) begin
+					ioctl_dout <= {ioctl_dout_next, tmp};
+					ioctl_wr <= 1;
+					ioctl_addr <= {addr[26:1], 1'b0};
+				end else
+					tmp <= ioctl_dout_next;
+			end else begin
+				ioctl_dout <= ioctl_dout_next;
+				ioctl_wr <= 1;
+				ioctl_addr <= addr;
+			end
 			addr <= addr + 1'd1;
-			ioctl_addr <= addr;
 		end
 		if (rd_int) begin
 			ioctl_addr <= ioctl_addr + 1'd1;
