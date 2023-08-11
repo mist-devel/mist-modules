@@ -254,8 +254,8 @@ always@(negedge spi_sck or posedge SPI_SS_IO) begin : spi_byteout
 	end
 end
 
-reg  [7:0] kbd_out_status;
-reg  [7:0] kbd_out_data_r;
+reg  [7:0] kbd_out_status = 0;
+reg  [7:0] kbd_out_data_r = 0;
 reg        kbd_out_data_available = 0;
 
 generate if (ARCHIE) begin
