@@ -247,6 +247,9 @@ always @(posedge clk_sys) begin
 		hb_sd <= sd_out[COLOR_DEPTH*3];
 	end
 
+	sd_i_div <= sd_i_div + 1'd1;
+	if (sd_i_div==ce_divider_adj) sd_i_div <= 3'b000;
+
 	//  Framing logic on sysclk
 	sd_synccnt <= sd_synccnt + 1'd1;
 	hsD <= hs_in;
@@ -254,13 +257,6 @@ always @(posedge clk_sys) begin
 	if(sd_synccnt == hs_max || (hsD && !hs_in)) begin
 		sd_synccnt <= 0;
 		sd_hcnt <= 0;
-	end
-
-	sd_i_div <= sd_i_div + 1'd1;
-	if (sd_i_div==ce_divider_adj) sd_i_div <= 3'b000;
-
-	// replicate horizontal sync at twice the speed
-	if(sd_synccnt == 0) begin
 		hs_sd <= 0;
 		sd_i_div <= 3'b000;
 	end
