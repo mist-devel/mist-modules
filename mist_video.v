@@ -41,9 +41,9 @@ module mist_video
 	input        VSync,
 
 	// MiST video output signals
-	output reg [5:0] VGA_R,
-	output reg [5:0] VGA_G,
-	output reg [5:0] VGA_B,
+	output reg [OUT_COLOR_DEPTH-1:0] VGA_R,
+	output reg [OUT_COLOR_DEPTH-1:0] VGA_G,
+	output reg [OUT_COLOR_DEPTH-1:0] VGA_B,
 	output reg       VGA_VS,
 	output reg       VGA_HS
 );
@@ -56,10 +56,12 @@ parameter COLOR_DEPTH = 6; // 1-6
 parameter OSD_AUTO_CE = 1'b1;
 parameter SYNC_AND = 1'b0; // 0 - XOR, 1 - AND
 parameter USE_BLANKS = 1'b0; // Honor H/VBlank signals?
+parameter SD_HSCNT_WIDTH = 12;
+parameter OUT_COLOR_DEPTH = 6;
 
-wire [5:0] SD_R_O;
-wire [5:0] SD_G_O;
-wire [5:0] SD_B_O;
+wire [OUT_COLOR_DEPTH-1:0] SD_R_O;
+wire [OUT_COLOR_DEPTH-1:0] SD_G_O;
+wire [OUT_COLOR_DEPTH-1:0] SD_B_O;
 wire       SD_HS_O;
 wire       SD_VS_O;
 wire       SD_HB_O;
@@ -67,7 +69,7 @@ wire       SD_VB_O;
 
 wire       pixel_ena;
 
-scandoubler #(SD_HCNT_WIDTH, COLOR_DEPTH) scandoubler
+scandoubler #(SD_HCNT_WIDTH, COLOR_DEPTH, SD_HSCNT_WIDTH, OUT_COLOR_DEPTH) scandoubler
 (
 	.clk_sys    ( clk_sys    ),
 	.bypass     ( scandoubler_disable ),
@@ -90,11 +92,11 @@ scandoubler #(SD_HCNT_WIDTH, COLOR_DEPTH) scandoubler
 	.b_out      ( SD_B_O     )
 );
 
-wire [5:0] osd_r_o;
-wire [5:0] osd_g_o;
-wire [5:0] osd_b_o;
+wire [OUT_COLOR_DEPTH-1:0] osd_r_o;
+wire [OUT_COLOR_DEPTH-1:0] osd_g_o;
+wire [OUT_COLOR_DEPTH-1:0] osd_b_o;
 
-osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE, USE_BLANKS) osd
+osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE, USE_BLANKS, OUT_COLOR_DEPTH) osd
 (
 	.clk_sys ( clk_sys ),
 	.rotate  ( rotate  ),
@@ -114,10 +116,10 @@ osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE, USE_BLANKS) osd
 	.B_out   ( osd_b_o )
 );
 
-wire [5:0] cofi_r, cofi_g, cofi_b;
+wire [OUT_COLOR_DEPTH-1:0] cofi_r, cofi_g, cofi_b;
 wire       cofi_hs, cofi_vs;
 
-cofi #(6) cofi (
+cofi #(OUT_COLOR_DEPTH) cofi (
 	.clk     ( clk_sys ),
 	.pix_ce  ( pixel_ena ),
 	.enable  ( blend   ),
@@ -135,9 +137,9 @@ cofi #(6) cofi (
 );
 
 wire       hs, vs, cs;
-wire [5:0] r,g,b;
+wire [OUT_COLOR_DEPTH-1:0] r,g,b;
 
-RGBtoYPbPr #(6) rgb2ypbpr
+RGBtoYPbPr #(OUT_COLOR_DEPTH) rgb2ypbpr
 (
 	.clk       ( clk_sys ),
 	.ena       ( ypbpr   ),

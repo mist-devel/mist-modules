@@ -56,48 +56,48 @@ module scandoubler
 	output       vb_out,
 	output       hs_out,
 	output       vs_out,
-	output [5:0] r_out,
-	output [5:0] g_out,
-	output [5:0] b_out
+	output [OUT_COLOR_DEPTH-1:0] r_out,
+	output [OUT_COLOR_DEPTH-1:0] g_out,
+	output [OUT_COLOR_DEPTH-1:0] b_out
 );
 
 parameter HCNT_WIDTH = 9; // Resolution of scandoubler buffer
 parameter COLOR_DEPTH = 6; // Bits per colour to be stored in the buffer
 parameter HSCNT_WIDTH = 12; // Resolution of hsync counters
+parameter OUT_COLOR_DEPTH = 6; // Bits per color outputted
 
 // --------------------- create output signals -----------------
 // latch everything once more to make it glitch free and apply scanline effect
 reg scanline;
-reg [5:0] r;
-reg [5:0] g;
-reg [5:0] b;
+reg [OUT_COLOR_DEPTH-1:0] r;
+reg [OUT_COLOR_DEPTH-1:0] g;
+reg [OUT_COLOR_DEPTH-1:0] b;
 
 wire [COLOR_DEPTH*3-1:0] sd_mux = bypass ? {r_in, g_in, b_in} : sd_out[COLOR_DEPTH*3-1:0];
 
+localparam m = OUT_COLOR_DEPTH/COLOR_DEPTH;
+localparam n = OUT_COLOR_DEPTH%COLOR_DEPTH;
+
 always @(*) begin
-	if (COLOR_DEPTH == 6) begin
-		b = sd_mux[5:0];
-		g = sd_mux[11:6];
-		r = sd_mux[17:12];
-	end else if (COLOR_DEPTH == 2) begin
-		b = {3{sd_mux[1:0]}};
-		g = {3{sd_mux[3:2]}};
-		r = {3{sd_mux[5:4]}};
-	end else if (COLOR_DEPTH == 1) begin
-		b = {6{sd_mux[0]}};
-		g = {6{sd_mux[1]}};
-		r = {6{sd_mux[2]}};
+	if (n>0) begin
+		b = { {m{sd_mux[COLOR_DEPTH-1:0]}}, sd_mux[COLOR_DEPTH-1 -:n] };
+		g = { {m{sd_mux[COLOR_DEPTH*2-1:COLOR_DEPTH]}}, sd_mux[COLOR_DEPTH*2-1 -:n] };
+		r = { {m{sd_mux[COLOR_DEPTH*3-1:COLOR_DEPTH*2]}}, sd_mux[COLOR_DEPTH*3-1 -:n] };
 	end else begin
-		b = { sd_mux[COLOR_DEPTH-1:0], sd_mux[COLOR_DEPTH-1 -:(6-COLOR_DEPTH)] };
-		g = { sd_mux[COLOR_DEPTH*2-1:COLOR_DEPTH], sd_mux[COLOR_DEPTH*2-1 -:(6-COLOR_DEPTH)] };
-		r = { sd_mux[COLOR_DEPTH*3-1:COLOR_DEPTH*2], sd_mux[COLOR_DEPTH*3-1 -:(6-COLOR_DEPTH)] };
+		b = { {m{sd_mux[COLOR_DEPTH-1:0]}} };
+		g = { {m{sd_mux[COLOR_DEPTH*2-1:COLOR_DEPTH]}} };
+		r = { {m{sd_mux[COLOR_DEPTH*3-1:COLOR_DEPTH*2]}} };
 	end
 end
 
 
-reg [12:0] r_mul;
-reg [12:0] g_mul;
-reg [12:0] b_mul;
+reg [OUT_COLOR_DEPTH+6:0] r_mul;
+reg [OUT_COLOR_DEPTH+6:0] g_mul;
+reg [OUT_COLOR_DEPTH+6:0] b_mul;
+reg hb_o;
+reg vb_o;
+reg hs_o;
+reg vs_o;
 
 wire scanline_bypass = (!scanline) | (!(|scanlines)) | bypass;
 
@@ -114,6 +114,8 @@ always @(posedge clk_sys) begin
 	if(ce_x2) begin
 		hs_o <= hs_sd;
 		vs_o <= vs_in;
+		hb_o <= hb_sd;
+		vb_o <= vb_sd;
 
 		// reset scanlines at every new screen
 		if(vs_o != vs_in) scanline <= 0;
@@ -127,19 +129,15 @@ always @(posedge clk_sys) begin
 	end
 end
 
-wire [5:0] r_o = r_mul[11:6];
-wire [5:0] g_o = g_mul[11:6];
-wire [5:0] b_o = b_mul[11:6];
-wire hb_o = hb_sd;
-wire vb_o = vb_sd;
-reg hs_o;
-reg vs_o;
+wire [OUT_COLOR_DEPTH-1:0] r_o = r_mul[OUT_COLOR_DEPTH+5 -:OUT_COLOR_DEPTH];
+wire [OUT_COLOR_DEPTH-1:0] g_o = g_mul[OUT_COLOR_DEPTH+5 -:OUT_COLOR_DEPTH];
+wire [OUT_COLOR_DEPTH-1:0] b_o = b_mul[OUT_COLOR_DEPTH+5 -:OUT_COLOR_DEPTH];
 
 // Output multiplexing
 wire   blank_out = hb_out | vb_out;
-assign r_out = blank_out ? {COLOR_DEPTH{1'b0}} : bypass ? r : r_o;
-assign g_out = blank_out ? {COLOR_DEPTH{1'b0}} : bypass ? g : g_o;
-assign b_out = blank_out ? {COLOR_DEPTH{1'b0}} : bypass ? b : b_o;
+assign r_out = blank_out ? {OUT_COLOR_DEPTH{1'b0}} : bypass ? r : r_o;
+assign g_out = blank_out ? {OUT_COLOR_DEPTH{1'b0}} : bypass ? g : g_o;
+assign b_out = blank_out ? {OUT_COLOR_DEPTH{1'b0}} : bypass ? b : b_o;
 assign hb_out = bypass ? hb_in : hb_o;
 assign vb_out = bypass ? vb_in : vb_o;
 assign hs_out = bypass ? hs_in : hs_o;

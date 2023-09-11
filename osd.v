@@ -15,18 +15,18 @@ module osd (
 	input  [1:0] rotate, //[0] - rotate [1] - left or right
 
 	// VGA signals coming from core
-	input  [5:0] R_in,
-	input  [5:0] G_in,
-	input  [5:0] B_in,
+	input [OUT_COLOR_DEPTH-1:0] R_in,
+	input [OUT_COLOR_DEPTH-1:0] G_in,
+	input [OUT_COLOR_DEPTH-1:0] B_in,
 	input        HBlank,
 	input        VBlank,
 	input        HSync,
 	input        VSync,
 
 	// VGA signals going to video connector
-	output [5:0] R_out,
-	output [5:0] G_out,
-	output [5:0] B_out
+	output [OUT_COLOR_DEPTH-1:0] R_out,
+	output [OUT_COLOR_DEPTH-1:0] G_out,
+	output [OUT_COLOR_DEPTH-1:0] B_out
 );
 
 parameter OSD_X_OFFSET = 11'd0;
@@ -34,6 +34,7 @@ parameter OSD_Y_OFFSET = 11'd0;
 parameter OSD_COLOR    = 3'd0;
 parameter OSD_AUTO_CE  = 1'b1;
 parameter USE_BLANKS   = 1'b0;
+parameter OUT_COLOR_DEPTH = 6;
 
 localparam OSD_WIDTH   = 11'd256;
 localparam OSD_HEIGHT  = 11'd128;
@@ -226,8 +227,8 @@ always @(posedge clk_sys) begin
 	end
 end
 
-assign R_out = !osd_de ? R_in : {osd_pixel, osd_pixel, OSD_COLOR[2], R_in[5:3]};
-assign G_out = !osd_de ? G_in : {osd_pixel, osd_pixel, OSD_COLOR[1], G_in[5:3]};
-assign B_out = !osd_de ? B_in : {osd_pixel, osd_pixel, OSD_COLOR[0], B_in[5:3]};
+assign R_out = !osd_de ? R_in : {osd_pixel, osd_pixel, OSD_COLOR[2], R_in[OUT_COLOR_DEPTH-1:3]};
+assign G_out = !osd_de ? G_in : {osd_pixel, osd_pixel, OSD_COLOR[1], G_in[OUT_COLOR_DEPTH-1:3]};
+assign B_out = !osd_de ? B_in : {osd_pixel, osd_pixel, OSD_COLOR[0], B_in[OUT_COLOR_DEPTH-1:3]};
 
 endmodule
