@@ -91,7 +91,8 @@ generic (
 	COLOR_DEPTH  : integer := 6;
 	OSD_AUTO_CE  : boolean := true;
 	SYNC_AND     : boolean := false;
-	USE_BLANKS   : boolean := false
+	USE_BLANKS   : boolean := false;
+	OUT_COLOR_DEPTH : integer := 6
 );
 port (
 	clk_sys     : in std_logic;
@@ -118,9 +119,9 @@ port (
 
 	VGA_HS      : out std_logic;
 	VGA_VS      : out std_logic;
-	VGA_R       : out std_logic_vector(5 downto 0);
-	VGA_G       : out std_logic_vector(5 downto 0);
-	VGA_B       : out std_logic_vector(5 downto 0)
+	VGA_R       : out std_logic_vector(OUT_COLOR_DEPTH-1 downto 0);
+	VGA_G       : out std_logic_vector(OUT_COLOR_DEPTH-1 downto 0);
+	VGA_B       : out std_logic_vector(OUT_COLOR_DEPTH-1 downto 0)
 );
 end component mist_video;
 
