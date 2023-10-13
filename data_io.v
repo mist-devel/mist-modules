@@ -77,13 +77,13 @@ parameter DOUT_16 = 1'b0;
 
 ///////////////////////////////   DOWNLOADING   ///////////////////////////////
 
-reg  [6:0] sbuf;
-reg  [7:0] data_w;
-reg  [7:0] data_w2  = 0;
-reg  [7:0] data_w3  = 0;
-reg  [3:0] cnt;
-reg  [7:0] cmd;
-reg  [6:0] bytecnt;
+reg   [6:0] sbuf;
+reg   [7:0] data_w;
+reg   [7:0] data_w2  = 0;
+reg  [15:0] data_w3  = 0;
+reg   [3:0] cnt;
+reg   [7:0] cmd;
+reg   [6:0] bytecnt;
 
 reg        rclk   = 0;
 reg        rclk2  = 0;
@@ -257,33 +257,34 @@ endgenerate
 generate if (USE_QSPI) begin
 
 always@(negedge QSCK, posedge QCSn) begin : QSPI_RECEIVER
-	reg nibble_lo;
+	reg [1:0] nibble;
 	reg cmd_got;
 	reg cmd_write;
 
 	if (QCSn) begin
 		cmd_got <= 0;
 		cmd_write <= 0;
-		nibble_lo <= 0;
+		nibble <= 0;
 	end else begin
-		nibble_lo <= ~nibble_lo;
-		if (nibble_lo) begin
-			data_w3[3:0] <= QDAT;
-			if (!cmd_got) begin
+		nibble <= nibble + 1'd1;
+		data_w3 <= {data_w3[11:0], QDAT};
+		if (!cmd_got) begin
+			// first byte is the command
+			if (nibble[0]) begin
+				nibble <= 0;
 				cmd_got <= 1;
-				if ({data_w3[7:4], QDAT} == QSPI_WRITE) cmd_write <= 1;
-			end else begin
-				if (cmd_write) rclk3 <= ~rclk3;
+				if ({data_w3[3:0], QDAT} == QSPI_WRITE) cmd_write <= 1;
 			end
-		end else
-			data_w3[7:4] <= QDAT;
+		end else if ((DOUT_16 && &nibble) || (!DOUT_16 & nibble[0])) begin
+			if (cmd_write) rclk3 <= ~rclk3;
+		end
 	end
 end
 end
 endgenerate
 
 reg         wr_int, wr_int_direct, wr_int_qspi, rd_int;
-wire  [7:0] ioctl_dout_next = wr_int ? data_w : wr_int_direct ? data_w2 : data_w3;
+wire  [7:0] ioctl_dout_next = wr_int ? data_w : data_w2;
 
 always@(posedge clk_sys) begin : DATA_OUT
 	// synchronisers
@@ -320,7 +321,7 @@ always@(posedge clk_sys) begin : DATA_OUT
 		wr_int <= 0;
 		wr_int_direct <= 0;
 		wr_int_qspi <= 0;
-		if (wr_int || wr_int_direct || wr_int_qspi) begin
+		if (wr_int || wr_int_direct) begin
 			if (DOUT_16) begin
 				if (addr[0]) begin
 					ioctl_dout <= {ioctl_dout_next, tmp};
@@ -334,6 +335,15 @@ always@(posedge clk_sys) begin : DATA_OUT
 				ioctl_addr <= addr;
 			end
 			addr <= addr + 1'd1;
+		end
+		if (wr_int_qspi) begin
+			ioctl_dout <= data_w3;
+			ioctl_wr <= 1;
+			ioctl_addr <= addr;
+			if (DOUT_16)
+				addr <= addr + 2'd2;
+			else
+				addr <= addr + 1'd1;
 		end
 		if (rd_int) begin
 			ioctl_addr <= ioctl_addr + 1'd1;
