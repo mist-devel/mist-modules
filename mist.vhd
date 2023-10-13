@@ -84,15 +84,17 @@ end component user_io;
 
 component mist_video
 generic (
-	OSD_COLOR    : std_logic_vector(2 downto 0) := "110";
-	OSD_X_OFFSET : std_logic_vector(9 downto 0) := (others => '0');
-	OSD_Y_OFFSET : std_logic_vector(9 downto 0) := (others => '0');
-	SD_HCNT_WIDTH: integer := 9;
-	COLOR_DEPTH  : integer := 6;
-	OSD_AUTO_CE  : boolean := true;
-	SYNC_AND     : boolean := false;
-	USE_BLANKS   : boolean := false;
-	OUT_COLOR_DEPTH : integer := 6
+	OSD_COLOR       : std_logic_vector(2 downto 0) := "110";
+	OSD_X_OFFSET    : std_logic_vector(9 downto 0) := (others => '0');
+	OSD_Y_OFFSET    : std_logic_vector(9 downto 0) := (others => '0');
+	SD_HCNT_WIDTH   : integer := 9;
+	COLOR_DEPTH     : integer := 6;
+	OSD_AUTO_CE     : boolean := true;
+	SYNC_AND        : boolean := false;
+	USE_BLANKS      : boolean := false;
+	SD_HSCNT_WIDTH  : integer := 12;
+	OUT_COLOR_DEPTH : integer := 6;
+	BIG_OSD         : boolean := false
 );
 port (
 	clk_sys     : in std_logic;

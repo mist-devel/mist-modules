@@ -58,6 +58,7 @@ parameter SYNC_AND = 1'b0; // 0 - XOR, 1 - AND
 parameter USE_BLANKS = 1'b0; // Honor H/VBlank signals?
 parameter SD_HSCNT_WIDTH = 12;
 parameter OUT_COLOR_DEPTH = 6;
+parameter BIG_OSD = 0;
 
 wire [OUT_COLOR_DEPTH-1:0] SD_R_O;
 wire [OUT_COLOR_DEPTH-1:0] SD_G_O;
@@ -96,7 +97,7 @@ wire [OUT_COLOR_DEPTH-1:0] osd_r_o;
 wire [OUT_COLOR_DEPTH-1:0] osd_g_o;
 wire [OUT_COLOR_DEPTH-1:0] osd_b_o;
 
-osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE, USE_BLANKS, OUT_COLOR_DEPTH) osd
+osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE, USE_BLANKS, OUT_COLOR_DEPTH, BIG_OSD) osd
 (
 	.clk_sys ( clk_sys ),
 	.rotate  ( rotate  ),
