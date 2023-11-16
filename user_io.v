@@ -98,6 +98,16 @@ module user_io (
 	output reg          mouse_strobe, // mouse data is valid on mouse_strobe
 	output reg          mouse_idx,    // which mouse?
 
+	// i2c bridge
+	output reg          i2c_start,
+	output reg          i2c_read,
+	output reg    [6:0] i2c_addr,
+	output reg    [7:0] i2c_subaddr,
+	output reg    [7:0] i2c_dout,
+	input         [7:0] i2c_din,
+	input               i2c_ack,
+	input               i2c_end,
+
 	// serial com port
 	input [7:0]         serial_data,
 	input               serial_strobe
@@ -331,6 +341,11 @@ always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 				if (byte_cnt == 0) spi_byte_out <= 8'h80;
 				else spi_byte_out <= FEATURES[(4-byte_cnt)<<3 +:8];
 
+			// i2c
+			8'h31:
+				if (byte_cnt == 0) spi_byte_out <= {6'd0, i2c_ack, i2c_end};
+				else spi_byte_out <= i2c_din;
+
 			endcase
 		end
 	end
@@ -390,6 +405,7 @@ always @(posedge clk_sys) begin : cmd_block
 	mouse_strobe <= 0;
 	ps2_kbd_tx_strobe <= 0;
 	ps2_mouse_tx_strobe <= 0;
+	i2c_start <= 0;
 
 	if(ARCHIE) begin
 		if (kbd_out_strobe) kbd_out_data_available <= 1;
@@ -514,6 +530,12 @@ always @(posedge clk_sys) begin : cmd_block
 
 				// RTC
 				8'h22: if(abyte_cnt<9) rtc[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
+
+				// I2C bridge
+				8'h30: if(abyte_cnt == 1) {i2c_addr, i2c_read} <= spi_byte_in;
+				       else if (abyte_cnt == 2) i2c_subaddr <= spi_byte_in;
+				       else if (abyte_cnt == 3) begin i2c_dout <= spi_byte_in; i2c_start <= 1; end
+
 			endcase
 		end
 	end

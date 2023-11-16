@@ -45,20 +45,23 @@ module mist_video
 	output reg [OUT_COLOR_DEPTH-1:0] VGA_G,
 	output reg [OUT_COLOR_DEPTH-1:0] VGA_B,
 	output reg       VGA_VS,
-	output reg       VGA_HS
+	output reg       VGA_HS,
+	output reg       VGA_HB,
+	output reg       VGA_VB
 );
 
 parameter OSD_COLOR    = 3'd4;
 parameter OSD_X_OFFSET = 10'd0;
 parameter OSD_Y_OFFSET = 10'd0;
 parameter SD_HCNT_WIDTH = 9;
-parameter COLOR_DEPTH = 6; // 1-6
+parameter COLOR_DEPTH = 6;     // 1-8
 parameter OSD_AUTO_CE = 1'b1;
-parameter SYNC_AND = 1'b0; // 0 - XOR, 1 - AND
-parameter USE_BLANKS = 1'b0; // Honor H/VBlank signals?
+parameter SYNC_AND = 1'b0;     // 0 - XOR, 1 - AND
+parameter USE_BLANKS = 1'b0;   // Honor H/VBlank signals?
 parameter SD_HSCNT_WIDTH = 12;
-parameter OUT_COLOR_DEPTH = 6;
-parameter BIG_OSD = 0;
+parameter OUT_COLOR_DEPTH = 6; // 1-8
+parameter BIG_OSD = 0;         // 16 line OSD
+parameter VIDEO_CLEANER = 0;   // Align VSync/VBlank to HSync/HBlank edges. HDMI usually needs it.
 
 wire [OUT_COLOR_DEPTH-1:0] SD_R_O;
 wire [OUT_COLOR_DEPTH-1:0] SD_G_O;
@@ -93,6 +96,35 @@ scandoubler #(SD_HCNT_WIDTH, COLOR_DEPTH, SD_HSCNT_WIDTH, OUT_COLOR_DEPTH) scand
 	.b_out      ( SD_B_O     )
 );
 
+wire [OUT_COLOR_DEPTH-1:0] cleaner_r_o;
+wire [OUT_COLOR_DEPTH-1:0] cleaner_g_o;
+wire [OUT_COLOR_DEPTH-1:0] cleaner_b_o;
+wire cleaner_hs_o, cleaner_vs_o, cleaner_hb_o, cleaner_vb_o;
+
+video_cleaner #(OUT_COLOR_DEPTH) video_cleaner(
+	.clk_vid    ( clk_sys     ),
+	.ce_pix     ( pixel_ena   ),
+	.enable     ( VIDEO_CLEANER ),
+
+	.R          ( SD_R_O      ),
+	.G          ( SD_G_O      ),
+	.B          ( SD_B_O      ),
+
+	.HSync      ( SD_HS_O     ),
+	.VSync      ( SD_VS_O     ),
+	.HBlank     ( SD_HB_O     ),
+	.VBlank     ( SD_VB_O     ),
+
+	.VGA_R      ( cleaner_r_o ),
+	.VGA_G      ( cleaner_g_o ),
+	.VGA_B      ( cleaner_b_o ),
+	.VGA_VS     ( cleaner_vs_o),
+	.VGA_HS     ( cleaner_hs_o),
+	.HBlank_out ( cleaner_hb_o),
+	.VBlank_out ( cleaner_vb_o)
+);
+
+
 wire [OUT_COLOR_DEPTH-1:0] osd_r_o;
 wire [OUT_COLOR_DEPTH-1:0] osd_g_o;
 wire [OUT_COLOR_DEPTH-1:0] osd_b_o;
@@ -105,13 +137,13 @@ osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE, USE_BLANKS, OUT_COLOR_
 	.SPI_DI  ( SPI_DI  ),
 	.SPI_SCK ( SPI_SCK ),
 	.SPI_SS3 ( SPI_SS3 ),
-	.R_in    ( SD_R_O ),
-	.G_in    ( SD_G_O ),
-	.B_in    ( SD_B_O ),
-	.HBlank  ( SD_HB_O ),
-	.VBlank  ( SD_VB_O ),
-	.HSync   ( SD_HS_O ),
-	.VSync   ( SD_VS_O ),
+	.R_in    ( cleaner_r_o ),
+	.G_in    ( cleaner_g_o ),
+	.B_in    ( cleaner_b_o ),
+	.HBlank  ( cleaner_hb_o ),
+	.VBlank  ( cleaner_vb_o ),
+	.HSync   ( cleaner_hs_o ),
+	.VSync   ( cleaner_vs_o ),
 	.R_out   ( osd_r_o ),
 	.G_out   ( osd_g_o ),
 	.B_out   ( osd_b_o )
@@ -119,25 +151,30 @@ osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE, USE_BLANKS, OUT_COLOR_
 
 wire [OUT_COLOR_DEPTH-1:0] cofi_r, cofi_g, cofi_b;
 wire       cofi_hs, cofi_vs;
+wire       cofi_hb, cofi_vb;
 
 cofi #(OUT_COLOR_DEPTH) cofi (
 	.clk     ( clk_sys ),
 	.pix_ce  ( pixel_ena ),
 	.enable  ( blend   ),
-	.hblank  ( USE_BLANKS ? SD_HB_O : ~SD_HS_O ),
-	.hs      ( SD_HS_O ),
-	.vs      ( SD_VS_O ),
+	.hblank  ( USE_BLANKS ? cleaner_hb_o : ~cleaner_hs_o ),
+	.vblank  ( cleaner_vb_o ),
+	.hs      ( cleaner_hs_o ),
+	.vs      ( cleaner_vs_o ),
 	.red     ( osd_r_o ),
 	.green   ( osd_g_o ),
 	.blue    ( osd_b_o ),
 	.hs_out  ( cofi_hs ),
 	.vs_out  ( cofi_vs ),
+	.hblank_out( cofi_hb ),
+	.vblank_out( cofi_vb ),
 	.red_out ( cofi_r  ),
 	.green_out( cofi_g ),
 	.blue_out( cofi_b  )
 );
 
 wire       hs, vs, cs;
+wire       hb, vb;
 wire [OUT_COLOR_DEPTH-1:0] r,g,b;
 
 RGBtoYPbPr #(OUT_COLOR_DEPTH) rgb2ypbpr
@@ -151,12 +188,16 @@ RGBtoYPbPr #(OUT_COLOR_DEPTH) rgb2ypbpr
 	.hs_in     ( cofi_hs    ),
 	.vs_in     ( cofi_vs    ),
 	.cs_in     ( SYNC_AND ? (cofi_hs & cofi_vs) : ~(cofi_hs ^ cofi_vs) ),
+	.hb_in     ( cofi_hb    ),
+	.vb_in     ( cofi_vb    ),
 	.red_out   ( r          ),
 	.green_out ( g          ),
 	.blue_out  ( b          ),
 	.hs_out    ( hs         ),
 	.vs_out    ( vs         ),
-	.cs_out    ( cs         )
+	.cs_out    ( cs         ),
+	.hb_out    ( hb         ),
+	.vb_out    ( vb         )
 );
 
 always @(posedge clk_sys) begin
@@ -167,5 +208,8 @@ always @(posedge clk_sys) begin
 	// and VCC on VGA_VS (to switch into rgb mode)
 	VGA_HS <= ((~no_csync & scandoubler_disable) || ypbpr)? cs : hs;
 	VGA_VS <= ((~no_csync & scandoubler_disable) || ypbpr)? 1'b1 : vs;
+
+	VGA_HB <= hb;
+	VGA_VB <= vb;
 end
 endmodule

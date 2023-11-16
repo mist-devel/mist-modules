@@ -94,7 +94,8 @@ generic (
 	USE_BLANKS      : boolean := false;
 	SD_HSCNT_WIDTH  : integer := 12;
 	OUT_COLOR_DEPTH : integer := 6;
-	BIG_OSD         : boolean := false
+	BIG_OSD         : boolean := false;
+	VIDEO_CLEANER   : boolean := false
 );
 port (
 	clk_sys     : in std_logic;
@@ -121,6 +122,8 @@ port (
 
 	VGA_HS      : out std_logic;
 	VGA_VS      : out std_logic;
+	VGA_HB      : out std_logic;
+	VGA_VB      : out std_logic;
 	VGA_R       : out std_logic_vector(OUT_COLOR_DEPTH-1 downto 0);
 	VGA_G       : out std_logic_vector(OUT_COLOR_DEPTH-1 downto 0);
 	VGA_B       : out std_logic_vector(OUT_COLOR_DEPTH-1 downto 0)
