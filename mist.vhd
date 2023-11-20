@@ -124,6 +124,7 @@ port (
 	VGA_VS      : out std_logic;
 	VGA_HB      : out std_logic;
 	VGA_VB      : out std_logic;
+	VGA_DE      : out std_logic;
 	VGA_R       : out std_logic_vector(OUT_COLOR_DEPTH-1 downto 0);
 	VGA_G       : out std_logic_vector(OUT_COLOR_DEPTH-1 downto 0);
 	VGA_B       : out std_logic_vector(OUT_COLOR_DEPTH-1 downto 0)
