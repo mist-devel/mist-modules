@@ -2,6 +2,7 @@
 
 // Copyright 2020/2021 by Alastair M. Robinson
 
+(* altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *)
 module RGBtoYPbPr
 (
 	input clk,
