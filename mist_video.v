@@ -55,14 +55,14 @@ parameter OSD_COLOR    = 3'd4;
 parameter OSD_X_OFFSET = 10'd0;
 parameter OSD_Y_OFFSET = 10'd0;
 parameter SD_HCNT_WIDTH = 9;
-parameter COLOR_DEPTH = 6;     // 1-8
+parameter COLOR_DEPTH = 6;      // 1-8
 parameter OSD_AUTO_CE = 1'b1;
-parameter SYNC_AND = 1'b0;     // 0 - XOR, 1 - AND
-parameter USE_BLANKS = 1'b0;   // Honor H/VBlank signals?
+parameter SYNC_AND = 1'b0;      // 0 - XOR, 1 - AND
+parameter USE_BLANKS = 1'b0;    // Honor H/VBlank signals?
 parameter SD_HSCNT_WIDTH = 12;
-parameter OUT_COLOR_DEPTH = 6; // 1-8
-parameter BIG_OSD = 0;         // 16 line OSD
-parameter VIDEO_CLEANER = 0;   // Align VSync/VBlank to HSync/HBlank edges. HDMI usually needs it.
+parameter OUT_COLOR_DEPTH = 6;  // 1-8
+parameter BIG_OSD = 1'b0;       // 16 line OSD
+parameter VIDEO_CLEANER = 1'b0; // Align VSync/VBlank to HSync/HBlank edges. HDMI usually needs it.
 
 wire [OUT_COLOR_DEPTH-1:0] SD_R_O;
 wire [OUT_COLOR_DEPTH-1:0] SD_G_O;

@@ -78,7 +78,16 @@ port (
 	mouse_z           : out signed(3 downto 0);
 	mouse_flags       : out std_logic_vector(7 downto 0); -- YOvfl, XOvfl, dy8, dx8, 1, mbtn, rbtn, lbtn
 	mouse_strobe      : out std_logic;
-	mouse_idx         : out std_logic
+	mouse_idx         : out std_logic;
+
+	i2c_start         : out std_logic;
+	i2c_read          : out std_logic;
+	i2c_addr          : out std_logic_vector(6 downto 0);
+	i2c_subaddr       : out std_logic_vector(7 downto 0);
+	i2c_dout          : out std_logic_vector(7 downto 0);
+	i2c_din           : in std_logic_vector(7 downto 0);
+	i2c_end           : in std_logic;
+	i2c_ack           : in std_logic
 );
 end component user_io;
 
@@ -130,5 +139,29 @@ port (
 	VGA_B       : out std_logic_vector(OUT_COLOR_DEPTH-1 downto 0)
 );
 end component mist_video;
+
+component i2c_master
+generic (
+	CLK_Freq    : integer := 50000000;
+	I2C_Freq    : integer := 400000
+);
+port (
+	CLK         : in std_logic;
+
+	I2C_START   : in std_logic;
+	I2C_READ    : in std_logic;
+	I2C_ADDR    : in std_logic_vector(6 downto 0);
+	I2C_SUBADDR : in std_logic_vector(7 downto 0);
+	I2C_WDATA   : in std_logic_vector(7 downto 0);
+	I2C_RDATA   : out std_logic_vector(7 downto 0);
+	I2C_END     : out std_logic;
+	I2C_ACK     : out std_logic;
+
+	-- I2C bus
+	I2C_SCL     : inout std_logic;
+	I2C_SDA     : inout std_logic
+);
+
+end component i2c_master;
 
 end package;
