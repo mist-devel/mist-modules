@@ -159,8 +159,8 @@ reg        line_toggle;
 reg  [HCNT_WIDTH-1:0] hcnt;
 reg  [HSCNT_WIDTH:0] hs_max;
 reg  [HSCNT_WIDTH:0] hs_rise;
-reg  [HCNT_WIDTH-1:0] hb_fall[2];
-reg  [HCNT_WIDTH-1:0] hb_rise[2];
+reg  [HCNT_WIDTH:0] hb_fall[2];
+reg  [HCNT_WIDTH:0] hb_rise[2];
 reg  [HCNT_WIDTH+1:0] vb_event[2];
 reg  [HCNT_WIDTH+1:0] vs_event[2];
 reg  [HSCNT_WIDTH:0] synccnt;
@@ -189,8 +189,8 @@ always @(posedge clk_sys) begin
 		if (vsD ^ vs_in) vs_event[line_toggle] <= {1'b1, vs_in, hcnt};
 		// save position of hblank
 		hbD <= hb_in;
-		if(!hbD &&  hb_in) hb_rise[line_toggle] <= hcnt;
-		if( hbD && !hb_in) hb_fall[line_toggle] <= hcnt;
+		if(!hbD &&  hb_in) hb_rise[line_toggle] <= {1'b1, hcnt};
+		if( hbD && !hb_in) hb_fall[line_toggle] <= {1'b1, hcnt};
 	end
 
 	// Generate pixel clock
@@ -220,6 +220,8 @@ always @(posedge clk_sys) begin
 		line_toggle <= !line_toggle;
 		vb_event[!line_toggle] <= 0;
 		vs_event[!line_toggle] <= 0;
+		hb_rise[!line_toggle][HCNT_WIDTH] <= 0;
+		hb_fall[!line_toggle][HCNT_WIDTH] <= 0;
 	end
 
 end
@@ -256,8 +258,8 @@ always @(posedge clk_sys) begin
 		// Handle VSync event
 		if(vs_event[~line_toggle][HCNT_WIDTH+1] && sd_hcnt == vs_event[~line_toggle][HCNT_WIDTH-1:0]) vs_sd <= vs_event[~line_toggle][HCNT_WIDTH];
 		// Handle HBlank events
-		if(sd_hcnt == hb_rise[~line_toggle]) hb_sd <= 1;
-		if(sd_hcnt == hb_fall[~line_toggle]) hb_sd <= 0;
+		if(hb_rise[~line_toggle][HCNT_WIDTH] && sd_hcnt == hb_rise[~line_toggle][HCNT_WIDTH-1:0]) hb_sd <= 1;
+		if(hb_fall[~line_toggle][HCNT_WIDTH] && sd_hcnt == hb_fall[~line_toggle][HCNT_WIDTH-1:0]) hb_sd <= 0;
 	end
 
 	sd_i_div <= sd_i_div + 1'd1;
