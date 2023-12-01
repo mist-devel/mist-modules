@@ -85,9 +85,9 @@ port (
 	i2c_addr          : out std_logic_vector(6 downto 0);
 	i2c_subaddr       : out std_logic_vector(7 downto 0);
 	i2c_dout          : out std_logic_vector(7 downto 0);
-	i2c_din           : in std_logic_vector(7 downto 0);
-	i2c_end           : in std_logic;
-	i2c_ack           : in std_logic
+	i2c_din           : in std_logic_vector(7 downto 0) := (others => '0');
+	i2c_end           : in std_logic := '0';
+	i2c_ack           : in std_logic := '0'
 );
 end component user_io;
 
