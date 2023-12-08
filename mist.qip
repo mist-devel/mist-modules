@@ -13,4 +13,6 @@ set_global_assignment -library mist -name VERILOG_FILE [file join $::quartus(qip
 set_global_assignment -library mist -name VERILOG_FILE [file join $::quartus(qip_path) ide_fifo.v]
 set_global_assignment -library mist -name VERILOG_FILE [file join $::quartus(qip_path) cdda_fifo.v]
 set_global_assignment -library mist -name VERILOG_FILE [file join $::quartus(qip_path) i2c_master.v]
+set_global_assignment -library mist -name VERILOG_FILE [file join $::quartus(qip_path) i2s.v]
+set_global_assignment -library mist -name VERILOG_FILE [file join $::quartus(qip_path) spdif.v]
 set_global_assignment -library mist -name VHDL_FILE    [file join $::quartus(qip_path) dac.vhd]
