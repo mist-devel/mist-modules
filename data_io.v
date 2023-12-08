@@ -77,8 +77,8 @@ parameter DOUT_16 = 1'b0;
 
 ///////////////////////////////   DOWNLOADING   ///////////////////////////////
 
-reg   [6:0] sbuf;
-reg   [7:0] data_w;
+reg  [14:0] sbuf;
+reg  [15:0] data_w;
 reg   [7:0] data_w2  = 0;
 reg  [15:0] data_w3  = 0;
 reg   [3:0] cnt;
@@ -152,16 +152,14 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 		bytecnt <= 0;
 		cnt <= 0;
 	end	else begin
-		// don't shift in last bit. It is evaluated directly
-		// when writing to ram
-		if(cnt != 15) sbuf <= { sbuf[5:0], SPI_DI};
+		sbuf <= { sbuf[13:0], SPI_DI};
 
 		// count 0-7 8-15 8-15 ...
 		if(cnt != 15) cnt <= cnt + 1'd1;
 			else cnt <= 8;
 
 		// finished command byte
-		if(cnt == 7) cmd <= {sbuf, SPI_DI};
+		if(cnt == 7) cmd <= {sbuf[6:0], SPI_DI};
 
 		if(cnt == 15) begin
 			if (~&bytecnt) bytecnt <= bytecnt + 1'd1;
@@ -169,7 +167,7 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 
 			case (cmd)
 			// prepare/end transmission
-			DIO_FILE_TX: begin
+			DIO_FILE_TX:
 				// prepare
 				if(SPI_DI) begin
 					addr_reset <= ~addr_reset;
@@ -177,9 +175,8 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 				end else begin
 					downloading_reg <= 0;
 				end
-			end
 
-			DIO_FILE_RX: begin
+			DIO_FILE_RX:
 				// prepare
 				if(SPI_DI) begin
 					addr_reset <= ~addr_reset;
@@ -187,31 +184,32 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER
 				end else begin
 					uploading_reg <= 0;
 				end
-			end
 
 			// command 0x57: DIO_FILE_RX_DAT
 			// command 0x54: DIO_FILE_TX_DAT
-			DIO_FILE_RX_DAT,
-			DIO_FILE_TX_DAT: begin
-				data_w <= {sbuf, SPI_DI};
+			DIO_FILE_RX_DAT:
 				rclk <= ~rclk;
-			end
+
+			DIO_FILE_TX_DAT:
+				if (bytecnt[0] | !DOUT_16) begin
+					data_w <= {sbuf, SPI_DI};
+					rclk <= ~rclk;
+				end
 
 			// expose file (menu) index
-			DIO_FILE_INDEX: ioctl_index <= {sbuf, SPI_DI};
+			DIO_FILE_INDEX: ioctl_index <= {sbuf[6:0], SPI_DI};
 
 			// receiving FAT directory entry (mist-firmware/fat.h - DIRENTRY)
-			DIO_FILE_INFO: begin
+			DIO_FILE_INFO:
 				case (bytecnt)
-					8'h08: ioctl_fileext[23:16]  <= {sbuf, SPI_DI};
-					8'h09: ioctl_fileext[15: 8]  <= {sbuf, SPI_DI};
-					8'h0A: ioctl_fileext[ 7: 0]  <= {sbuf, SPI_DI};
-					8'h1C: ioctl_filesize[ 7: 0] <= {sbuf, SPI_DI};
-					8'h1D: ioctl_filesize[15: 8] <= {sbuf, SPI_DI};
-					8'h1E: ioctl_filesize[23:16] <= {sbuf, SPI_DI};
-					8'h1F: ioctl_filesize[31:24] <= {sbuf, SPI_DI};
+					8'h08: ioctl_fileext[23:16]  <= {sbuf[6:0], SPI_DI};
+					8'h09: ioctl_fileext[15: 8]  <= {sbuf[6:0], SPI_DI};
+					8'h0A: ioctl_fileext[ 7: 0]  <= {sbuf[6:0], SPI_DI};
+					8'h1C: ioctl_filesize[ 7: 0] <= {sbuf[6:0], SPI_DI};
+					8'h1D: ioctl_filesize[15: 8] <= {sbuf[6:0], SPI_DI};
+					8'h1E: ioctl_filesize[23:16] <= {sbuf[6:0], SPI_DI};
+					8'h1F: ioctl_filesize[31:24] <= {sbuf[6:0], SPI_DI};
 				endcase
-			end
 			endcase
 		end
 	end
@@ -284,7 +282,7 @@ end
 endgenerate
 
 reg         wr_int, wr_int_direct, wr_int_qspi, rd_int;
-wire  [7:0] ioctl_dout_next = wr_int ? data_w : data_w2;
+wire [15:0] ioctl_dout_next = wr_int ? data_w : data_w3;
 
 always@(posedge clk_sys) begin : DATA_OUT
 	// synchronisers
@@ -321,29 +319,31 @@ always@(posedge clk_sys) begin : DATA_OUT
 		wr_int <= 0;
 		wr_int_direct <= 0;
 		wr_int_qspi <= 0;
-		if (wr_int || wr_int_direct) begin
+		if (wr_int_direct) begin
 			if (DOUT_16) begin
 				if (addr[0]) begin
-					ioctl_dout <= {ioctl_dout_next, tmp};
+					ioctl_dout <= {data_w2, tmp};
 					ioctl_wr <= 1;
 					ioctl_addr <= {addr[26:1], 1'b0};
 				end else
-					tmp <= ioctl_dout_next;
+					tmp <= data_w2;
 			end else begin
-				ioctl_dout <= ioctl_dout_next;
+				ioctl_dout <= data_w2;
 				ioctl_wr <= 1;
 				ioctl_addr <= addr;
 			end
 			addr <= addr + 1'd1;
 		end
-		if (wr_int_qspi) begin
-			ioctl_dout <= data_w3;
+		if (wr_int | wr_int_qspi) begin
 			ioctl_wr <= 1;
 			ioctl_addr <= addr;
-			if (DOUT_16)
+			if (DOUT_16) begin
+				ioctl_dout <= {ioctl_dout_next[7:0], ioctl_dout_next[15:8]};
 				addr <= addr + 2'd2;
-			else
+			end else begin
+				ioctl_dout <= ioctl_dout_next[7:0];
 				addr <= addr + 1'd1;
+			end
 		end
 		if (rd_int) begin
 			ioctl_addr <= ioctl_addr + 1'd1;
@@ -407,7 +407,7 @@ reg        rclk_ide_regs_wr = 0;
 reg        rclk_ide_wr = 0;
 reg        rclk_ide_rd = 0;
 reg        rclk_cdda_wr = 0;
-reg  [7:0] data_ide;
+reg [15:0] data_ide;
 
 always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER_IDE
 	if(SPI_SS2) begin
@@ -427,13 +427,13 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER_IDE
 
 			CMD_IDE_STATUS_WR:
 				if (bytecnt == 0) begin
-					data_ide <= {sbuf, SPI_DI};
+					data_ide[7:0] <= {sbuf[6:0], SPI_DI};
 					rclk_ide_stat <= ~rclk_ide_stat;
 				end
 
 			CMD_IDE_REGS_WR:
 				if (bytecnt >= 8 && bytecnt <= 18 && !bytecnt[0]) begin
-					data_ide <= {sbuf, SPI_DI};
+					data_ide[7:0] <= {sbuf[6:0], SPI_DI};
 					rclk_ide_regs_wr <= ~rclk_ide_regs_wr;
 				end
 
@@ -443,13 +443,13 @@ always@(posedge SPI_SCK, posedge SPI_SS2) begin : SPI_RECEIVER_IDE
 				end
 
 			CMD_IDE_DATA_WR:
-				if (bytecnt > 4) begin
+				if (bytecnt > 4 & !bytecnt[0]) begin
 					data_ide <= {sbuf, SPI_DI};
 					rclk_ide_wr <= ~rclk_ide_wr;
 				end
 
 			CMD_IDE_CDDA_WR:
-				if (bytecnt > 4) begin
+				if (bytecnt > 4 & !bytecnt[0]) begin
 					data_ide <= {sbuf, SPI_DI};
 					rclk_cdda_wr <= ~rclk_cdda_wr;
 				end
@@ -507,7 +507,7 @@ always@(posedge hdd_clk) begin : IDE_OUT
 
 	if (rclk_ide_statD ^ rclk_ide_statD2) begin
 		int_hdd_status_wr <= 1;
-		int_hdd_data_out <= {8'h00, data_ide};
+		int_hdd_data_out <= {8'h00, data_ide[7:0]};
 	end
 	if (rclk_ide_rdD ^ rclk_ide_rdD2) begin
 		loword <= ~loword;
@@ -515,23 +515,15 @@ always@(posedge hdd_clk) begin : IDE_OUT
 			int_hdd_data_rd <= 1;
 	end
 	if (rclk_ide_wrD ^ rclk_ide_wrD2) begin
-		loword <= ~loword;
-		if (!loword)
-			int_hdd_data_out[15:8] <= data_ide;
-		else begin
-			int_hdd_data_wr <= 1;
-			int_hdd_data_out[7:0] <= data_ide;
-		end
+		int_hdd_data_out <= data_ide;
+		int_hdd_data_wr <= 1;
 	end
+
 	if (rclk_cdda_wrD ^ rclk_cdda_wrD2) begin
-		loword <= ~loword;
-		if (!loword)
-			int_hdd_data_out[15:8] <= data_ide;
-		else begin
-			int_hdd_cdda_wr <= 1;
-			int_hdd_data_out[7:0] <= data_ide;
-		end
+		int_hdd_data_out <= data_ide;
+		int_hdd_cdda_wr <= 1;
 	end
+
 	if (rclk2D ^ rclk2D2 && !downloading_reg) begin
 		loword <= ~loword;
 		if (!loword)
@@ -543,7 +535,7 @@ always@(posedge hdd_clk) begin : IDE_OUT
 	end
 	if (rclk_ide_regs_wrD ^ rclk_ide_regs_wrD2) begin
 		int_hdd_wr <= 1;
-		int_hdd_data_out <= {8'h00, data_ide};
+		int_hdd_data_out <= {8'h00, data_ide[7:0]};
 		int_hdd_addr <= int_hdd_addr + 1'd1;
 	end
 	if (rclk_ide_regs_rdD ^ rclk_ide_regs_rdD2) begin
