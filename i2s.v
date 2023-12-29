@@ -2,9 +2,9 @@
 
 module i2s
 (
-	input      reset,
-	input      clk,
-	input      clk_rate,
+	input        reset,
+	input        clk,
+	input [31:0] clk_rate,
 
 	output reg sclk,
 	output reg lrclk,
