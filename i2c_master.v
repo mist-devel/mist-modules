@@ -44,7 +44,7 @@ reg  [6:0] SD_COUNTER;
 reg [0:42] SD;
 
 assign I2C_SCL = (SCLK | I2C_CLOCK) ? 1'bZ : 1'b0;
-assign I2C_SDA = SDO[7] ? 1'bZ : 1'b0;
+assign I2C_SDA = ((CLK_Freq/I2C_Freq) > 20 ? SDO[7] : SDO[3]) ? 1'bZ : 1'b0;
 
 initial begin
 	SD_COUNTER = 'b1111111;
