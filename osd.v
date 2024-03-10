@@ -106,20 +106,23 @@ wire [10:0] dsp_height = (vs_pol & !USE_BLANKS) ? vs_low : vs_high;
 wire doublescan = (dsp_height>350);
 
 reg auto_ce_pix;
-always @(posedge clk_sys) begin
+always @(posedge clk_sys) begin : cedetect
 	reg [15:0] cnt = 0;
 	reg  [2:0] pixsz;
 	reg  [2:0] pixcnt;
 	reg        hs;
+	reg        hb;
 
 	cnt <= cnt + 1'd1;
 	hs <= HSync;
+	hb <= HBlank;
 
 	pixcnt <= pixcnt + 1'd1;
 	if(pixcnt == pixsz) pixcnt <= 0;
 	auto_ce_pix <= !pixcnt;
 
-	if(hs && ~HSync) begin
+	if((!USE_BLANKS && hs && ~HSync) ||
+	   ( USE_BLANKS && ~hb && HBlank)) begin
 		cnt <= 0;
 		if(cnt <= OSD_WIDTH_PADDED * 2) pixsz <= 0;
 		else if(cnt <= OSD_WIDTH_PADDED * 3) pixsz <= 1;
@@ -131,6 +134,7 @@ always @(posedge clk_sys) begin
 		pixcnt <= 0;
 		auto_ce_pix <= 1;
 	end
+	if (USE_BLANKS && HBlank) cnt <= 0;
 end
 
 wire ce_pix = OSD_AUTO_CE ? auto_ce_pix : ce;
