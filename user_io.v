@@ -24,7 +24,7 @@
  
 module user_io (
 	input [(8*STRLEN)-1:0] conf_str,
-	output       [9:0]  conf_addr, // RAM address for config string, if STRLEN=0
+	output      [10:0]  conf_addr, // RAM address for config string, if STRLEN=0
 	input        [7:0]  conf_chr,
 
 	input               clk_sys, // clock for system-related messages (kbd, joy, etc...)
@@ -126,7 +126,7 @@ localparam W = $clog2(SD_IMAGES);
 reg [6:0]     sbuf;
 reg [7:0]     cmd;
 reg [2:0]     bit_cnt;    // counts bits 0-7 0-7 ...
-reg [9:0]     byte_cnt;   // counts bytes
+reg [10:0]    byte_cnt;   // counts bytes
 reg [7:0]     but_sw;
 reg [2:0]     stick_idx;
 
@@ -247,7 +247,7 @@ always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_counter
 		byte_cnt <= 0;
 	end else begin
 		if((bit_cnt == 7)&&(~&byte_cnt)) 
-			byte_cnt <= byte_cnt + 8'd1;
+			byte_cnt <= byte_cnt + 1'd1;
 
 		bit_cnt <= bit_cnt + 1'd1;
 	end
