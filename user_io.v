@@ -66,7 +66,7 @@ module user_io (
 	output reg          sd_dout_strobe = 0,
 	input         [7:0] sd_din,
 	output reg          sd_din_strobe = 0,
-	output reg    [8:0] sd_buff_addr,
+	output reg [8+SD_BLKSZ:0] sd_buff_addr,
 
 	output reg [SD_IMAGES-1:0] img_mounted, // rising edge if a new image is mounted
 	output reg   [63:0] img_size,    // size of image in bytes
@@ -120,6 +120,7 @@ parameter SD_IMAGES=2; // number of block-access images (max. 4 supported in cur
 parameter PS2BIDIR=0; // bi-directional PS2 interface
 parameter FEATURES=0; // requested features from the firmware
 parameter ARCHIE=0;
+parameter SD_BLKSZ=0; // blocksize = 512**SD_BLKSZ
 
 localparam W = $clog2(SD_IMAGES);
 
@@ -283,7 +284,7 @@ endgenerate
 
 always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 	reg [31:0] sd_lba_r;
-	reg  [W:0] drive_sel_r;
+	reg  [7:0] drive_sel_r;
 	reg        ps2_kbd_rx_strobeD;
 	reg        ps2_mouse_rx_strobeD;
 
@@ -323,7 +324,9 @@ always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 			8'h16: if(byte_cnt == 0) begin
 					spi_byte_out <= sd_cmd;
 					sd_lba_r <= sd_lba;
-					drive_sel_r <= drive_sel;
+					drive_sel_r <= 0;
+					drive_sel_r[W:0] <= drive_sel;
+					drive_sel_r[4] <= SD_BLKSZ;
 				end 
 				else if(byte_cnt == 1) spi_byte_out <= drive_sel_r;
 				else if(byte_cnt < 6) spi_byte_out <= sd_lba_r[(5-byte_cnt)<<3 +:8];
