@@ -120,7 +120,7 @@ parameter SD_IMAGES=2; // number of block-access images (max. 4 supported in cur
 parameter PS2BIDIR=0; // bi-directional PS2 interface
 parameter FEATURES=0; // requested features from the firmware
 parameter ARCHIE=0;
-parameter SD_BLKSZ=0; // blocksize = 512**SD_BLKSZ
+parameter SD_BLKSZ=1'b0; // blocksize = 512<<SD_BLKSZ
 
 localparam W = $clog2(SD_IMAGES);
 
@@ -137,7 +137,8 @@ assign scandoubler_disable = but_sw[4];
 assign ypbpr = but_sw[5];
 assign no_csync = but_sw[6];
 
-assign conf_addr = byte_cnt;
+assign conf_addr = byte_cnt + conf_offset - 2'd3;
+reg [10:0] conf_offset = 0;
 
 // bit 4 indicates ROM direct upload capability
 wire [7:0] core_type = ARCHIE ? 8'ha6 : ROM_DIRECT_UPLOAD ? 8'hb4 : 8'ha4;
@@ -320,6 +321,11 @@ always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 			8'h14: if (STRLEN == 0) spi_byte_out <= conf_chr; else
 			       if(byte_cnt < STRLEN) spi_byte_out <= conf_str[(STRLEN - byte_cnt - 1)<<3 +:8];
 
+			// reading config string with offset
+			8'h24: if(byte_cnt == 0) spi_byte_out <= 8'hAA; else // indicating the command is supported
+			       if (STRLEN == 0) spi_byte_out <= conf_chr; else
+			       if((byte_cnt + conf_offset - 2'd3) < STRLEN) spi_byte_out <= conf_str[(STRLEN - (byte_cnt + conf_offset - 2'd3) - 1)<<3 +:8];
+
 			// reading sd card status
 			8'h16: if(byte_cnt == 0) begin
 					spi_byte_out <= sd_cmd;
@@ -425,6 +431,7 @@ always @(posedge clk_sys) begin : cmd_block
 		abyte_cnt <= 0;
 		mouse_fifo_ok <= 0;
 		kbd_fifo_ok <= 0;
+		conf_offset <= 0;
 	end else if (spi_receiver_strobeD ^ spi_receiver_strobe) begin
 
 		if(~&abyte_cnt) 
@@ -533,6 +540,10 @@ always @(posedge clk_sys) begin : cmd_block
 
 				// RTC
 				8'h22: if(abyte_cnt<9) rtc[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
+
+				// get_conf_str_ext
+				8'h24: if(abyte_cnt == 1) conf_offset[7:0] <= spi_byte_in;
+				       else if (abyte_cnt == 2) conf_offset[10:8] <= spi_byte_in[2:0];
 
 				// I2C bridge
 				8'h30: if(abyte_cnt == 1) {i2c_addr, i2c_read} <= spi_byte_in;
