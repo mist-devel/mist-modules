@@ -125,7 +125,7 @@ parameter SD_BLKSZ=1'b0; // blocksize = 512<<SD_BLKSZ
 localparam W = $clog2(SD_IMAGES);
 
 reg [6:0]     sbuf;
-reg [7:0]     cmd;
+reg [7:0]     cmd;        // command in SPI_CLK domain
 reg [2:0]     bit_cnt;    // counts bits 0-7 0-7 ...
 reg [10:0]    byte_cnt;   // counts bytes
 reg [7:0]     but_sw;
@@ -137,7 +137,7 @@ assign scandoubler_disable = but_sw[4];
 assign ypbpr = but_sw[5];
 assign no_csync = but_sw[6];
 
-assign conf_addr = byte_cnt + conf_offset - 2'd3;
+assign conf_addr = byte_cnt + conf_offset - (cmd == 8'h24 ? 2'd3 : 2'd0);
 reg [10:0] conf_offset = 0;
 
 // bit 4 indicates ROM direct upload capability
@@ -291,6 +291,7 @@ always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 
 	if(SPI_SS_IO == 1) begin
 		spi_byte_out <= core_type;
+		cmd <= 0;
 	end else begin
 		// read the command byte to choose the response
 		if(bit_cnt == 7) begin
