@@ -37,20 +37,20 @@ always @(posedge CLK) begin
 end
 
 reg        SCLK;
-reg  [7:0] SDO;
+reg [11:0] SDO;
 reg  [0:7] rdata;
 
 reg  [6:0] SD_COUNTER;
 reg [0:42] SD;
 
 assign I2C_SCL = (SCLK | I2C_CLOCK) ? 1'bZ : 1'b0;
-assign I2C_SDA = ((CLK_Freq/I2C_Freq) > 20 ? SDO[7] : SDO[3]) ? 1'bZ : 1'b0;
+assign I2C_SDA = ((CLK_Freq/I2C_Freq) > 250 ? SDO[11] : ((CLK_Freq/I2C_Freq) > 20 ? SDO[7] : SDO[3])) ? 1'bZ : 1'b0;
 
 initial begin
 	SD_COUNTER = 'b1111111;
 	SD   = {40'hFFFFFFFFFF, 3'b111};
 	SCLK = 1;
-	SDO  = 8'hFF;
+	SDO  = 12'hFFF;
 end
 
 assign I2C_RDATA = rdata;
@@ -67,11 +67,11 @@ always @(posedge CLK) begin
 
 	// delay to make sure SDA changed while SCL is stabilized at low
 	if(old_clk && ~I2C_CLOCK && ~SD_COUNTER[6]) SDO[0] <= SD[SD_COUNTER[5:0]];
-	SDO[7:1] <= SDO[6:0];
+	SDO[11:1] <= SDO[10:0];
 
 	if(~old_st && I2C_START) begin
 		SCLK <= 1;
-		SDO  <= 8'hFF;
+		SDO  <= 12'hFFF;
 		I2C_ACK  <= 0;
 		I2C_END  <= 0;
 		rd   <= I2C_READ;
