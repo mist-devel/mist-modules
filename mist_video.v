@@ -78,7 +78,7 @@ scandoubler #(SD_HCNT_WIDTH, COLOR_DEPTH, SD_HSCNT_WIDTH, OUT_COLOR_DEPTH) scand
 (
 	.clk_sys    ( clk_sys    ),
 	.bypass     ( scandoubler_disable ),
-	.ce_divider ( ce_divider ),
+	.ce_divider ( {1'b0, ce_divider} ),
 	.scanlines  ( scanlines  ),
 	.pixel_ena  ( pixel_ena  ),
 	.hb_in      ( HBlank     ),
