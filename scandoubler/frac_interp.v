@@ -66,7 +66,7 @@ always @(posedge clk) begin
 		spos<=0;
 		dpos<=0;
 		whole_i<=0;
-		offset<=centre ? {den[bitwidth-2:0],1'b0}-num : 10'd0;
+		offset<=centre ? {den[bitwidth-2:0],1'b0}-num : {bitwidth{1'b0}};
 	end
 		
 	if(div_done)

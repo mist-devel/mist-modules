@@ -32,6 +32,7 @@ module scandoubler
 	input            clk_sys,
 
 	input            bypass,
+	input            rotateonly,
 
 	// Pixelclock
 	input      [3:0] ce_divider, // 0 - clk_sys/4, 1 - clk_sys/2, 2 - clk_sys/3, 3 - clk_sys/4, etc.
@@ -66,17 +67,17 @@ module scandoubler
 	
 	// Memory interface - to RAM (for rotation).  Operates on 16-word bursts
 	output wire         vidin_req,    // High at start of row, remains high until burst of 16 pixels has been delivered
-	output wire         vidin_frame,  // Odd or even frame for double-buffering
-	output wire [9:0]   vidin_row,    // Y position of current row.
-	output wire [9:0]   vidin_col,    // X position of current burst.
+	output wire [1:0]   vidin_frame,  // Odd or even frame for double-buffering
+	output wire [10:0]  vidin_row,    // Y position of current row.
+	output wire [10:0]  vidin_col,    // X position of current burst.
 	output wire [15:0]  vidin_d,      // Incoming video data
 	input wire          vidin_ack,    // Request next word from host
 	
 	// Memory interface - from RAM (for rotation).  Operates on 8-word bursts
 	output wire         vidout_req,   // High at start of row, remains high until entire row has been delivered
-	output wire         vidout_frame, // Odd or even frame for double-buffering
-	output wire [9:0]   vidout_row,   // Y position of current row.  (Controller maintains X counter)
-	output wire [9:0]   vidout_col,   // Y position of current row.  (Controller maintains X counter)
+	output wire [1:0]   vidout_frame, // Odd or even frame for double-buffering
+	output wire [10:0]  vidout_row,   // Y position of current row.  (Controller maintains X counter)
+	output wire [10:0]  vidout_col,   // Y position of current row.  (Controller maintains X counter)
 	input wire [15:0]   vidout_d,     // Outgoing video data
 	input wire          vidout_ack    // Valid data available.
 );
@@ -117,16 +118,16 @@ wire   blank_out = hb_out | vb_out;
 assign r_out = blank_out ? {OUT_COLOR_DEPTH{1'b0}} : r;
 assign g_out = blank_out ? {OUT_COLOR_DEPTH{1'b0}} : g;
 assign b_out = blank_out ? {OUT_COLOR_DEPTH{1'b0}} : b;
-assign hb_out = bypass ? hb_in : hb_o;
-assign vb_out = bypass ? vb_in : vb_o;
-assign hs_out = bypass ? hs_in : hs_o;
-assign vs_out = bypass ? vs_in : vs_o;
+assign hb_out = (bypass | rotateonly) ? hb_in : hb_o;
+assign vb_out = (bypass | rotateonly) ? vb_in : vb_o;
+assign hs_out = (bypass | rotateonly) ? hs_in : hs_o;
+assign vs_out = (bypass | rotateonly) ? vs_in : vs_o;
 
 
 wire pe_in; // Pixel enable for input signal
 wire pe_out; // Pixel enable for output signal
 
-wire  [HCNT_WIDTH-1:0] hcnt;
+wire [HCNT_WIDTH-1:0] hcnt;
 wire [HCNT_WIDTH-1:0] sd_hcnt;
 wire vb_sd;
 wire hb_sd;
@@ -169,13 +170,12 @@ scandoubler_rotate #(
 	.OUT_COLOR_DEPTH(OUT_COLOR_DEPTH)
 ) rotate (
 	.clk_sys(clk_sys),
-	.bypass(bypass),
 	.rotation(rotation),
+	.rotateonly(rotateonly),
 	.hfilter(hfilter),
 	.vfilter(vfilter),
 	
 	.pe_in(pe_in),
-	.pe_out(pe_out),
 	.ppe_out(ppe_out),
 
 	.hs_in(hs_in),
@@ -186,9 +186,9 @@ scandoubler_rotate #(
 	.g_in(g_in),
 	.b_in(b_in),
 
-	.hb_sd(hb_sd),
-	.vb_sd(vb_sd),
-	.vs_sd(vs_sd),
+	.hb_sd(rotateonly ? hb_in : hb_sd),
+	.vb_sd(rotateonly ? vb_in : vb_sd),
+	.vs_sd(rotateonly ? vs_in : vs_sd),
 	.r_out(r_rot),
 	.g_out(g_rot),
 	.b_out(b_rot),
@@ -208,10 +208,9 @@ scandoubler_rotate #(
 	.vidout_col(vidout_col)
 );
 
-
-assign r = (rotation==2'b00 || bypass) ? r_ld : r_rot; 
-assign g = (rotation==2'b00 || bypass) ? g_ld : g_rot; 
-assign b = (rotation==2'b00 || bypass) ? b_ld : b_rot; 
+assign r = (rotation==2'b00 || (bypass & !rotateonly)) ? r_ld : r_rot;
+assign g = (rotation==2'b00 || (bypass & !rotateonly)) ? g_ld : g_rot;
+assign b = (rotation==2'b00 || (bypass & !rotateonly)) ? b_ld : b_rot;
 
 assign pixel_ena_x2=ppe_out;
 assign pixel_ena_x1=pe_in;
