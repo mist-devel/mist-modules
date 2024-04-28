@@ -50,16 +50,16 @@ module scandoubler_sdram (
 	output reg [15:0]  rom_dout,
 
 	input wire         vidin_req,    // High at start of row, remains high until burst of 16 pixels has been delivered
-	input wire         vidin_frame,  // Odd or even frame for double-buffering
-	input wire [9:0]   vidin_row,    // Y position of current row.
-	input wire [9:0]   vidin_col,    // X position of current burst.
+	input wire [1:0]   vidin_frame,  // Odd or even frame for double-buffering
+	input wire [10:0]  vidin_row,    // Y position of current row.
+	input wire [10:0]  vidin_col,    // X position of current burst.
 	input wire [15:0]  vidin_d,      // Incoming video data
 	output wire        vidin_ack,    // Request next word from host
 	
 	input wire         vidout_req,   // High at start of row, remains high until entire row has been delivered
-	input wire         vidout_frame, // Odd or even frame for double-buffering
-	input wire [9:0]   vidout_row,   // Y position of current row.  (Controller maintains X counter)
-	input wire [9:0]   vidout_col,   // Y position of current row.  (Controller maintains X counter)
+	input wire [1:0]   vidout_frame, // Odd or even frame for double-buffering
+	input wire [10:0]  vidout_row,   // Y position of current row.  (Controller maintains X counter)
+	input wire [10:0]  vidout_col,   // Y position of current row.  (Controller maintains X counter)
 	output reg [15:0]  vidout_q,     // Outgoing video data
 	output reg         vidout_ack    // Valid data available.
 );
@@ -88,7 +88,7 @@ localparam STATE_CMD_CONT  = STATE_FIRST  + {2'b00,RASCAS_DELAY}; // command can
 localparam STATE_READ      = STATE_CMD_CONT + {2'b00,CAS_LATENCY} + 5'd2;
 localparam STATE_END       = 5'd7;  // last state in cycle
 localparam STATE_VIDREADEND = STATE_CMD_CONT+{2'b00,CAS_LATENCY}+5'd10;
-localparam STATE_VIDWRITEEND = STATE_CMD_CONT+5'd19;
+localparam STATE_VIDWRITEEND = STATE_CMD_CONT+5'd11;
 
 reg [4:0] t = STATE_FIRST;
 
@@ -157,9 +157,7 @@ reg        rom_port;
 reg        we_latch;
 reg        drive_dq;
 
-reg        vidwrite_bank;
 reg        vidwrite = 0;
-reg        vidwrite_frame;
 reg        vidwrite_next;
 
 reg        vidread = 0;
@@ -227,18 +225,16 @@ always @(posedge clk_96) begin
 				sd_addr <= rom_addr[21:9];
 				sd_ba <= {1'b0,rom_addr[22]};
 			end else if (vidin_req) begin
-				vidwrite_frame<=vidin_frame;
 				vidwrite<=1'b1;
-				vidwrite_bank<=vidin_col[3];
-				sd_ba <= {1'b1,vidin_col[3]};
-				sd_addr <= {2'b11,vidin_frame,vidin_col[9:4],vidin_row[9:6]};
+				sd_ba <= 2'b11;
+				sd_addr <= {vidin_frame,vidin_col[9:5],vidin_row[9:4]};
 //				$display("vidwrite (%t) bank %d, row %h", $time, {1'b1,vidin_col[3]}, {2'b11,vidin_frame,vidin_col[9:4],~vidin_row[9:6]});
 				sd_cmd <= CMD_ACTIVE;
 			end else if (vidout_req) begin
 				vidread<=1'b1;
 				// ba(0) <= x(3); // Stripe adjacent pixel blocks across banks
-				sd_ba <= {1'b1,vidout_row[3]};
-				sd_addr <= {2'b11,vidout_frame,vidout_row[9:4],vidout_col[9:6]};
+				sd_ba <= 2'b11;
+				sd_addr <= {vidout_frame,vidout_row[9:5],vidout_col[9:4]};
 				sd_cmd <= CMD_ACTIVE;
 //				$display("vidread  (%t) read bank %d, row %h", $time, {1'b1,vidout_row[3]}, {2'b11,vidout_frame,vidout_row[9:4],~vidout_col[9:6]});
 
@@ -250,69 +246,49 @@ always @(posedge clk_96) begin
 
 		// Video write:
 		// Address mapping:
-		// ba(0) <= x(3); // Stripe adjacent pixel blocks across banks
-		// col(2 downto 0) <= not y(2 downto 0);  // If we read in 8-word bursts then we want pixels from 8 consecutive rows to be together.
-		// Leaves 6 bits of column address and entire row address.
-
-		// col(5 downto 3) <= not y(5 downto 3); // 8 words, so 64 rotated pixels per RAM row  
-		// col(8 downto 6) <= x(2 downto 0); // 8 words, so 16 pixels per bank.row
-		// row(9 downto 0) <= x(9 downto 4) & not y(9 downto 6); // 9 bits 
-		// row(10) <= frame;
-		// row(12 downto 11) <= (others => '1');
+		// col(3 downto 0) <= y(3 downto 0); // 4 bits, 16 words
+		// col(8 downto 4) <= x(4 downto 0); // 5 bits, 32 words
+		// col(9) <= y(10); // On 64 meg chips only
+		// row(5 downto 0) <= y(9 downto 4); // 6 bits
+		// row(10 downto 6) <= x(9 downto 5); // 5 bits 
+		// row(12 downto 11) <= frame;
 
 		vidwrite_next<=1'b0;
 
 		if(vidwrite) begin
-			if(t==STATE_CMD_CONT) begin
-				// Open row on second bank
-				sd_ba <= {1'b1,~vidwrite_bank};
-				sd_cmd <= CMD_ACTIVE;
-				sd_addr <= {2'b11,vidwrite_frame,vidin_col[9:4],vidin_row[9:6]};
-//				$display("vidwrite (%t) bank %d, row %h", $time, 2'b11, {2'b11,vidin_frame,vidin_col[9:4],~vidin_row[9:6]});
-			end
-
-			if(t>=(STATE_CMD_CONT-1) && t <STATE_CMD_CONT+15)
+			if(t>=(STATE_CMD_CONT-1) && t <STATE_CMD_CONT+7)
 				vidwrite_next<=1'b1;
 
-			if(t==STATE_CMD_CONT+1)
-				sd_ba <= {1'b1,vidwrite_bank};
-
-			if(t==STATE_CMD_CONT+9)
-				sd_ba <= {1'b1,~vidwrite_bank};
-
-			if(t>=STATE_CMD_CONT+1 && t<=STATE_CMD_CONT+16) begin
+			if(t>=STATE_CMD_CONT+1 && t<=STATE_CMD_CONT+8) begin
 				sd_dqm <= 2'b00;
 				sd_data_reg <= vidin_d;
 				drive_dq <= 1'b1;
 
 				sd_addr[12:11] <= 2'b00;
 				sd_addr[10] <= 1'b0;
-				if((t==STATE_CMD_CONT+8) || (t==STATE_CMD_CONT+16))
+				sd_ba <= 2'b11;
+				if(t==STATE_CMD_CONT+8)
 					sd_addr[10] <= 1'b1;	// Auto precharge
-				sd_addr[9:0] <= {1'b0,vidin_col[2:0],vidin_row[5:0]};
+				sd_addr[9:0] <= {vidin_row[10],vidin_col[4:0],vidin_row[3:0]};
 				sd_cmd<=CMD_WRITE;
 //				$display("vidwrite (%t) bank %d, col %h", $time, sd_ba, {1'b0,vidin_col[2:0],~vidin_row[5:0]});
 			end
-			if(t==STATE_CMD_CONT+17)
-				vidwrite <= 1'b0;
 		end
 
 		// Video read:
 		// Address mapping:
-		// ba(0) <= y(3);
-		// col(2 downto 0) <= x(2 downto 0);
-
-		// col(5 downto 3) <= x(5 downto 3);
-		// col(8 downto 6) <= y(2 downto 0);
-		// row(9 downto 0) <= y(9 downto 4) & not x(9 downto 6);
-		// row(10) <= frame;
-		// row(12 downto 10) <= (others => '1');
+		// col(3 downto 0) <= x(3 downto 0);
+		// col(8 downto 4) <= y(4 downto 0);
+		// col(9) <= x(10; // on 64 meg chips only
+		// row(5 downto 0) <= x(9 downto 4);
+		// row(10 downto 6) <= y(9 downto 5);
+		// row(12 downto 11) <= frame;
 
 		if(vidread) begin
 			if(t == STATE_CMD_CONT) begin
 				sd_addr[12:11] <= 2'b00;
 				sd_addr[10] <= 1'b1; // Auto precharge
-				sd_addr[9:0] <= {1'b0,vidout_row[2:0],vidout_col[5:3],3'b0};
+				sd_addr[9:0] <= {vidout_col[10],vidout_row[4:0],vidout_col[3],3'b0};
 				sd_cmd <= CMD_READ;
 //				$display("vidread  (%t) column %h", $time, {1'b0,vidout_row[2:0],vidout_col[5:0]});
 			end

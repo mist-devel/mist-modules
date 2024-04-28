@@ -21,6 +21,7 @@ module mist_dual_video
 
 	// 0 = HVSync 31KHz, 1 = CSync 15KHz
 	input        scandoubler_disable,
+	input        rotateonly,
 	// disable csync without scandoubler
 	input        no_csync,
 	// YPbPr always uses composite sync
@@ -113,22 +114,23 @@ wire        pixel_ena_x2;
 
 wire        vidin_req;
 wire        vidin_ack;
-wire  [9:0] vidin_row;
-wire  [9:0] vidin_col;
+wire [10:0] vidin_row;
+wire [10:0] vidin_col;
 wire [15:0] vidin_d;
-wire        vidin_frame;
+wire  [1:0] vidin_frame;
 
 wire        vidout_req;
 wire        vidout_ack;
-wire  [9:0] vidout_row;
-wire  [9:0] vidout_col;
+wire [10:0] vidout_row;
+wire [10:0] vidout_col;
 wire [15:0] vidout_d;
-wire        vidout_frame;
+wire  [1:0] vidout_frame;
 
 scandoubler #(SD_HCNT_WIDTH, COLOR_DEPTH, SD_HSCNT_WIDTH, 8) scandoubler
 (
 	.clk_sys    ( clk_sys    ),
 	.bypass     ( 1'b0       ),
+	.rotateonly ( rotateonly ),
 	.ce_divider ( ce_divider ),
 	.scanlines  ( scanlines  ),
 	.rotation   ( rotate_screen  ),
@@ -186,7 +188,7 @@ scandoubler_sdram sdram_ctrl (
 	.ram_dout(ram_dout),
 	.ram_addr(ram_addr),
 	.ram_ds(ram_ds),     // upper/lower data strobe
-	.ram_req(ram_req),    // cpu/chipset requests read/write
+	.ram_req(ram_req),   // cpu/chipset requests read/write
 	.ram_we(ram_we),     // cpu/chipset requests write
 	.ram_ack(ram_ack),
 
@@ -227,14 +229,16 @@ scandoubler_scaledepth #(COLOR_DEPTH, OUT_COLOR_DEPTH) vga_scaledepth_r(R, SCALE
 scandoubler_scaledepth #(COLOR_DEPTH, OUT_COLOR_DEPTH) vga_scaledepth_g(G, SCALED_G_O);
 scandoubler_scaledepth #(COLOR_DEPTH, OUT_COLOR_DEPTH) vga_scaledepth_b(B, SCALED_B_O);
 
-wire [OUT_COLOR_DEPTH-1:0] vga_r_in = scandoubler_disable ? SCALED_R_O : SD_SCALED_R_O;
-wire [OUT_COLOR_DEPTH-1:0] vga_g_in = scandoubler_disable ? SCALED_G_O : SD_SCALED_G_O;
-wire [OUT_COLOR_DEPTH-1:0] vga_b_in = scandoubler_disable ? SCALED_B_O : SD_SCALED_B_O;
-wire vga_hs_in = scandoubler_disable ? HSync  : SD_HS_O;
-wire vga_vs_in = scandoubler_disable ? VSync  : SD_VS_O;
-wire vga_hb_in = scandoubler_disable ? HBlank : SD_HB_O;
-wire vga_vb_in = scandoubler_disable ? VBlank : SD_VB_O;
-wire vga_pixel_ena = scandoubler_disable ? pixel_ena_x1 : pixel_ena_x2;
+wire use_sd = !scandoubler_disable | (rotate_screen != 0 & rotateonly);
+wire blank = HBlank | VBlank;
+wire [OUT_COLOR_DEPTH-1:0] vga_r_in = !use_sd ? (blank ? {OUT_COLOR_DEPTH{1'b0}} : SCALED_R_O) : SD_SCALED_R_O;
+wire [OUT_COLOR_DEPTH-1:0] vga_g_in = !use_sd ? (blank ? {OUT_COLOR_DEPTH{1'b0}} : SCALED_G_O) : SD_SCALED_G_O;
+wire [OUT_COLOR_DEPTH-1:0] vga_b_in = !use_sd ? (blank ? {OUT_COLOR_DEPTH{1'b0}} : SCALED_B_O) : SD_SCALED_B_O;
+wire vga_hs_in = !use_sd ? HSync  : SD_HS_O;
+wire vga_vs_in = !use_sd ? VSync  : SD_VS_O;
+wire vga_hb_in = !use_sd ? HBlank : SD_HB_O;
+wire vga_vb_in = !use_sd ? VBlank : SD_VB_O;
+wire vga_pixel_ena = use_sd ? pixel_ena_x2 : pixel_ena_x1;
 
 wire [OUT_COLOR_DEPTH-1:0] vga_osd_r_o;
 wire [OUT_COLOR_DEPTH-1:0] vga_osd_g_o;
