@@ -7,6 +7,10 @@ module mist_dual_video
 	// it should be 4x (or 2x) pixel clock for the scandoubler
 	input        clk_sys,
 
+	input        clk_75, // 75MHz clock, used for screenmode generation
+	
+	output       clk_out, // Switched by the core, used for everything video related after the scandoubler
+
 	// OSD SPI interface
 	input        SPI_SCK,
 	input        SPI_SS3,
@@ -32,6 +36,7 @@ module mist_dual_video
 	// filters for rotation
 	input        rotate_hfilter,
 	input        rotate_vfilter,
+	input  [2:0] screenmode,
 	// composite-like blending
 	input        blend,
 
@@ -113,27 +118,29 @@ wire        pixel_ena_x2;
 
 wire        vidin_req;
 wire        vidin_ack;
-wire  [9:0] vidin_row;
-wire  [9:0] vidin_col;
-wire [15:0] vidin_d;
-wire        vidin_frame;
+wire  [10:0] vidin_x;
+wire  [10:0] vidin_y;
+wire  [15:0] vidin_d;
+wire  [1:0]  vidin_frame;
 
 wire        vidout_req;
 wire        vidout_ack;
-wire  [9:0] vidout_row;
-wire  [9:0] vidout_col;
+wire [10:0] vidout_x;
+wire [10:0] vidout_y;
 wire [15:0] vidout_d;
-wire        vidout_frame;
+wire [1:0]  vidout_frame;
 
 scandoubler #(SD_HCNT_WIDTH, COLOR_DEPTH, SD_HSCNT_WIDTH, 8) scandoubler
 (
 	.clk_sys    ( clk_sys    ),
+	.clk_75     ( clk_75     ),
 	.bypass     ( 1'b0       ),
 	.ce_divider ( ce_divider ),
 	.scanlines  ( scanlines  ),
 	.rotation   ( rotate_screen  ),
 	.hfilter    ( rotate_hfilter ),
 	.vfilter    ( rotate_vfilter ),
+	.screenmode ( screenmode ),
 	.pixel_ena_x1 ( pixel_ena_x1 ),
 	.pixel_ena_x2 ( pixel_ena_x2 ),
 	.hb_in      ( HBlank     ),
@@ -143,6 +150,8 @@ scandoubler #(SD_HCNT_WIDTH, COLOR_DEPTH, SD_HSCNT_WIDTH, 8) scandoubler
 	.r_in       ( R          ),
 	.g_in       ( G          ),
 	.b_in       ( B          ),
+	
+	.clk_out    ( clk_out    ),
 	.hb_out     ( SD_HB_O    ),
 	.vb_out     ( SD_VB_O    ),
 	.hs_out     ( SD_HS_O    ),
@@ -156,18 +165,18 @@ scandoubler #(SD_HCNT_WIDTH, COLOR_DEPTH, SD_HSCNT_WIDTH, 8) scandoubler
 	.vidin_d    ( vidin_d    ),
 	.vidin_ack  ( vidin_ack  ),
 	.vidin_frame(vidin_frame ),
-	.vidin_row  ( vidin_row  ),
-	.vidin_col  ( vidin_col  ),
+	.vidin_x    ( vidin_x    ),
+	.vidin_y    ( vidin_y    ),
 
 	.vidout_req( vidout_req  ),
 	.vidout_d  ( vidout_d    ),
 	.vidout_ack( vidout_ack  ),
 	.vidout_frame( vidout_frame),
-	.vidout_row( vidout_row  ),
-	.vidout_col( vidout_col  )
+	.vidout_x  ( vidout_x  ),
+	.vidout_y  ( vidout_y  )
 );
 
-// SDRAM controller for screen rotation
+// SDRAM controller for screen rotation / scalar
 scandoubler_sdram sdram_ctrl (
 	.sd_data(SDRAM_DQ),  // 16 bit bidirectional data bus
 	.sd_addr(SDRAM_A),   // 13 bit multiplexed address bus
@@ -182,13 +191,13 @@ scandoubler_sdram sdram_ctrl (
 	.init(sdram_init),
 	.ready(),
 
-	.ram_din(ram_din),
-	.ram_dout(ram_dout),
-	.ram_addr(ram_addr),
-	.ram_ds(ram_ds),     // upper/lower data strobe
-	.ram_req(ram_req),    // cpu/chipset requests read/write
-	.ram_we(ram_we),     // cpu/chipset requests write
-	.ram_ack(ram_ack),
+	.port1_din(ram_din),
+	.port1_dout(ram_dout),
+	.port1_addr(ram_addr),
+	.port1_ds(ram_ds),     // upper/lower data strobe
+	.port1_req(ram_req),    // cpu/chipset requests read/write
+	.port1_we(ram_we),     // cpu/chipset requests write
+	.port1_ack(ram_ack),
 
 	.rom_oe(rom_oe),
 	.rom_addr(rom_addr),
@@ -198,12 +207,12 @@ scandoubler_sdram sdram_ctrl (
 	.vidin_d(vidin_d),
 	.vidin_ack(vidin_ack),
 	.vidin_frame(vidin_frame),
-	.vidin_row(vidin_row),
-	.vidin_col(vidin_col),
+	.vidin_x(vidin_x),
+	.vidin_y(vidin_y),
 
 	.vidout_req(vidout_req),
-	.vidout_row(vidout_row),
-	.vidout_col(vidout_col),
+	.vidout_x(vidout_x),
+	.vidout_y(vidout_y),
 	.vidout_frame(vidout_frame),
 	.vidout_q(vidout_d),
 	.vidout_ack(vidout_ack)
@@ -242,7 +251,7 @@ wire [OUT_COLOR_DEPTH-1:0] vga_osd_b_o;
 
 osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE, USE_BLANKS, OUT_COLOR_DEPTH, BIG_OSD) vga_osd
 (
-	.clk_sys ( clk_sys     ),
+	.clk_sys ( clk_out     ),
 	.rotate  ( rotate      ),
 	.ce      ( vga_pixel_ena ),
 	.SPI_DI  ( SPI_DI      ),
@@ -266,7 +275,7 @@ wire       vga_cofi_hb, vga_cofi_vb;
 wire       vga_cofi_pixel_ena;
 
 cofi #(OUT_COLOR_DEPTH) vga_cofi (
-	.clk     ( clk_sys     ),
+	.clk     ( clk_out     ),
 	.pix_ce  ( vga_pixel_ena ),
 	.enable  ( blend       ),
 	.hblank  ( USE_BLANKS ? vga_hb_in : ~vga_hs_in ),
@@ -292,7 +301,7 @@ wire [OUT_COLOR_DEPTH-1:0] r,g,b;
 
 RGBtoYPbPr #(OUT_COLOR_DEPTH) rgb2ypbpr
 (
-	.clk       ( clk_sys ),
+	.clk       ( clk_out ),
 	.ena       ( ypbpr   ),
 
 	.red_in    ( vga_cofi_r   ),
@@ -313,7 +322,7 @@ RGBtoYPbPr #(OUT_COLOR_DEPTH) rgb2ypbpr
 	.vb_out    ( vb           )
 );
 
-always @(posedge clk_sys) begin
+always @(posedge clk_out) begin
 
 	VGA_R  <= r;
 	VGA_G  <= g;
@@ -336,7 +345,7 @@ wire [7:0] hdmi_osd_b_o;
 
 osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE, USE_BLANKS, 8, BIG_OSD) hdmi_osd
 (
-	.clk_sys ( clk_sys      ),
+	.clk_sys ( clk_out      ),
 	.rotate  ( rotate       ),
 	.ce      ( pixel_ena_x2 ),
 	.SPI_DI  ( SPI_DI       ),
@@ -360,7 +369,7 @@ wire       hdmi_cofi_hb, hdmi_cofi_vb;
 wire       hdmi_cofi_pixel_ena;
 
 cofi #(8) hdmi_cofi (
-	.clk     ( clk_sys        ),
+	.clk     ( clk_out        ),
 	.pix_ce  ( pixel_ena_x2   ),
 	.enable  ( blend          ),
 	.hblank  ( USE_BLANKS ? SD_HB_O : ~SD_HS_O ),
@@ -386,7 +395,7 @@ wire [7:0] cleaner_b_o;
 wire cleaner_hs_o, cleaner_vs_o, cleaner_hb_o, cleaner_vb_o;
 
 video_cleaner #(8) video_cleaner(
-	.clk_vid    ( clk_sys          ),
+	.clk_vid    ( clk_out          ),
 	.ce_pix     ( hdmi_cofi_pixel_ena ),
 	.enable     ( VIDEO_CLEANER ),
 
@@ -409,7 +418,7 @@ video_cleaner #(8) video_cleaner(
 );
 
 
-always @(posedge clk_sys) begin
+always @(posedge clk_out) begin
 	HDMI_R  <= cleaner_r_o;
 	HDMI_G  <= cleaner_g_o;
 	HDMI_B  <= cleaner_b_o;

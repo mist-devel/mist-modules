@@ -1,3 +1,6 @@
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) screenmodes.sv]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) video_timings.sv]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) cdc_pulse.v]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) scandoubler_sdram.v]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) frac_interp.v]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) pixel_interp.v]
@@ -7,5 +10,7 @@ set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) scandou
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) scandoubler_rotate.v]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) scandoubler_framing.v]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) scandoubler_scaledepth.v]
-set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) scandoubler.v]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) scandoubler_pll.v]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) scandoubler_clkctrl.v]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) scandoubler.sv]
 

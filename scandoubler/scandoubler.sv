@@ -25,11 +25,13 @@
 // Also now has a bypass mode, in which the incoming data will be scaled to the output
 // width but otherwise unmodified.  Simplifies the rest of the video chain.
 
+`include "screenmodes.vh"
 
 module scandoubler
 (
 	// system interface
 	input            clk_sys,
+	input            clk_75,
 
 	input            bypass,
 
@@ -37,7 +39,6 @@ module scandoubler
 	input      [3:0] ce_divider, // 0 - clk_sys/4, 1 - clk_sys/2, 2 - clk_sys/3, 3 - clk_sys/4, etc.
 	output           pixel_ena_x1,
 	output           pixel_ena_x2,
-	output           pixel_ena,
 
 	// scanlines (00-none 01-25% 10-50% 11-75%)
 	input      [1:0] scanlines,
@@ -45,6 +46,8 @@ module scandoubler
 	input      [1:0] rotation, // 0 - no rotation, 1 - anticlockwise, 2 - clockwise
 	input            hfilter,
 	input            vfilter,
+	
+	input      [2:0] screenmode, // Select from a number of preset screenmodes.  0: default (synchronous) mode
 
 	// shifter video interface
 	input            hb_in,
@@ -56,6 +59,7 @@ module scandoubler
 	input      [COLOR_DEPTH-1:0] b_in,
 
 	// output interface
+	output       clk_out,   // Used for everything beyond the scandoubler; may or may not be the same as clk_sys
 	output       hb_out,
 	output       vb_out,
 	output       hs_out,
@@ -64,20 +68,20 @@ module scandoubler
 	output [OUT_COLOR_DEPTH-1:0] g_out,
 	output [OUT_COLOR_DEPTH-1:0] b_out,
 	
-	// Memory interface - to RAM (for rotation).  Operates on 16-word bursts
-	output wire         vidin_req,    // High at start of row, remains high until burst of 16 pixels has been delivered
-	output wire         vidin_frame,  // Odd or even frame for double-buffering
-	output wire [9:0]   vidin_row,    // Y position of current row.
-	output wire [9:0]   vidin_col,    // X position of current burst.
-	output wire [15:0]  vidin_d,      // Incoming video data
+	// Memory interface - to RAM (for rotation).  Operates on 8-word bursts which may or may not be contiguous
+	output wire         vidin_req,    // High at start of burst, remains high until burst of 8 pixels has been delivered
+	output wire [1:0]   vidin_frame,  // Frame number for double- or triple-buffering
+	output wire [HCNT_WIDTH-1:0]  vidin_x,      // X position of current row.
+	output wire [HCNT_WIDTH-1:0]  vidin_y,      // Y position of current burst.
+	output wire [15:0]  vidin_d,      // Video data to RAM
 	input wire          vidin_ack,    // Request next word from host
 	
-	// Memory interface - from RAM (for rotation).  Operates on 8-word bursts
+	// Memory interface - from RAM (for rotation).  Operates on 8-word contiguous bursts
 	output wire         vidout_req,   // High at start of row, remains high until entire row has been delivered
-	output wire         vidout_frame, // Odd or even frame for double-buffering
-	output wire [9:0]   vidout_row,   // Y position of current row.  (Controller maintains X counter)
-	output wire [9:0]   vidout_col,   // Y position of current row.  (Controller maintains X counter)
-	input wire [15:0]   vidout_d,     // Outgoing video data
+	output wire [1:0]   vidout_frame, // Frame number for double- or triple-buffering
+	output wire [HCNT_WIDTH-1:0]  vidout_x,     // Y position of current row.
+	output wire [HCNT_WIDTH-1:0]  vidout_y,     // Y position of current row.
+	input wire [15:0]   vidout_d,     // Video data from RAM
 	input wire          vidout_ack    // Valid data available.
 );
 
@@ -100,33 +104,18 @@ wire [OUT_COLOR_DEPTH-1:0] r_rot;
 wire [OUT_COLOR_DEPTH-1:0] g_rot;
 wire [OUT_COLOR_DEPTH-1:0] b_rot;
 
-reg hs_o, vs_o;
-reg hb_o, vb_o;
-
-always @(posedge clk_sys) begin
-	if(pe_out) begin
-		hs_o <= hs_sd;
-		vs_o <= vs_sd;
-		hb_o <= hb_sd;
-		vb_o <= vb_sd;
-	end
-end
-
 // Output multiplexing
 wire   blank_out = hb_out | vb_out;
 assign r_out = blank_out ? {OUT_COLOR_DEPTH{1'b0}} : r;
 assign g_out = blank_out ? {OUT_COLOR_DEPTH{1'b0}} : g;
 assign b_out = blank_out ? {OUT_COLOR_DEPTH{1'b0}} : b;
-assign hb_out = bypass ? hb_in : hb_o;
-assign vb_out = bypass ? vb_in : vb_o;
-assign hs_out = bypass ? hs_in : hs_o;
-assign vs_out = bypass ? vs_in : vs_o;
 
 
 wire pe_in; // Pixel enable for input signal
 wire pe_out; // Pixel enable for output signal
+wire ppe_out; // Pixel enable for postprocessing
 
-wire  [HCNT_WIDTH-1:0] hcnt;
+wire [HCNT_WIDTH-1:0] hcnt;
 wire [HCNT_WIDTH-1:0] sd_hcnt;
 wire vb_sd;
 wire hb_sd;
@@ -166,6 +155,7 @@ scandoubler_linedouble#(
 scandoubler_rotate #(
 	.HCNT_WIDTH(HCNT_WIDTH),
 	.COLOR_DEPTH(COLOR_DEPTH),
+	.HSCNT_WIDTH(HSCNT_WIDTH),
 	.OUT_COLOR_DEPTH(OUT_COLOR_DEPTH)
 ) rotate (
 	.clk_sys(clk_sys),
@@ -175,8 +165,6 @@ scandoubler_rotate #(
 	.vfilter(vfilter),
 	
 	.pe_in(pe_in),
-	.pe_out(pe_out),
-	.ppe_out(ppe_out),
 
 	.hs_in(hs_in),
 	.vs_in(vs_in),
@@ -186,9 +174,14 @@ scandoubler_rotate #(
 	.g_in(g_in),
 	.b_in(b_in),
 
-	.hb_sd(hb_sd),
-	.vb_sd(vb_sd),
-	.vs_sd(vs_sd),
+	.clk_dst(clk_out),
+
+	.pe_out(pe_out),
+	.ppe_out(ppe_out),
+
+	.hb_sd(hb_o),
+	.vb_sd(vb_o),
+	.vs_sd(vs_o),
 	.r_out(r_rot),
 	.g_out(g_rot),
 	.b_out(b_rot),
@@ -197,27 +190,28 @@ scandoubler_rotate #(
 	.vidin_d(vidin_d),
 	.vidin_ack(vidin_ack),
 	.vidin_frame(vidin_frame),
-	.vidin_row(vidin_row),
-	.vidin_col(vidin_col),
+	.vidin_x(vidin_x),
+	.vidin_y(vidin_y),
 
 	.vidout_req(vidout_req),
 	.vidout_d(vidout_d),
 	.vidout_ack(vidout_ack),
 	.vidout_frame(vidout_frame),
-	.vidout_row(vidout_row),
-	.vidout_col(vidout_col)
+	.vidout_y(vidout_y),
+	.vidout_x(vidout_x)
 );
 
+wire userotscale = (|rotation || |screenmode) && !bypass;
 
-assign r = (rotation==2'b00 || bypass) ? r_ld : r_rot; 
-assign g = (rotation==2'b00 || bypass) ? g_ld : g_rot; 
-assign b = (rotation==2'b00 || bypass) ? b_ld : b_rot; 
+assign r = userotscale ? r_rot : r_ld;
+assign g = userotscale ? g_rot : g_ld;
+assign b = userotscale ? b_rot : b_ld;
 
+assign pixel_ena_x1=pe_out;
 assign pixel_ena_x2=ppe_out;
-assign pixel_ena_x1=pe_in;
-assign pixel_ena = bypass ? pe_in : ppe_out;
 
-wire ppe_out;
+wire pe_out_sd;
+wire ppe_out_sd;
 wire line_toggle;
 
 // Factor out the scandoubler framing
@@ -241,13 +235,85 @@ scandoubler_framing #(
 	.vb_out(vb_sd),
 	.hs_out(hs_sd),
 	.vs_out(vs_sd),
-	.pe_out(pe_out),
+	.pe_out(pe_out_sd),
 	
-	.ppe_out(ppe_out),
+	.ppe_out(ppe_out_sd),
 
 	.hcnt_out(sd_hcnt),
 	.line_out(line_toggle)	
 );
+
+
+// Video framing for scaler.
+
+wire hb_sc,vb_sc,hs_sc,vs_sc; 
+wire pe_out_sc,ppe_out_sc;
+
+screenmode_timings timings;
+
+always @(posedge clk_out) begin
+	case(screenmode) 
+		3'b000: timings <= `SCREENMODE_640_480_60;
+		3'b001: timings <= `SCREENMODE_640_480_60;
+		3'b010: timings <= `SCREENMODE_768_576_60;
+		3'b011: timings <= `SCREENMODE_800_600_56;
+		3'b100: timings <= `SCREENMODE_800_600_72;
+		3'b101: timings <= `SCREENMODE_1024_768_70;
+		3'b110: timings <= `SCREENMODE_1280_720_60;
+		3'b111: timings <= `SCREENMODE_1920_1080_30;
+	endcase
+end
+
+video_timings vt (
+	.clk(clk_out),
+	.reset_n(1'b1),
+	.frame_stb(),
+	.hsync_n(hs_sc),
+	.vsync_n(vs_sc),
+	.hblank_n(hb_sc),
+	.vblank_n(vb_sc),
+	.hblank_stb(),
+	.vblank_stb(),
+	.pixel_stb(pe_out_sc),
+	.xpos(),
+	.ypos(),
+	.timings(timings)
+);
+
+assign ppe_out_sc = pe_out_sc;
+
+
+reg hs_o, vs_o;
+reg hb_o, vb_o;
+
+always @(posedge clk_out) begin
+	if(pe_out) begin
+		hs_o <= |screenmode ? hs_sc : hs_sd;
+		vs_o <= |screenmode ? vs_sc : vs_sd;
+		hb_o <= |screenmode ? ~hb_sc : hb_sd;
+		vb_o <= |screenmode ? ~vb_sc : vb_sd;
+	end
+end
+
+wire [1:0] clkselect;
+scandoubler_clkctrl (
+	.clkselect(clkselect),
+	.inclk0x(1'b0),
+	.inclk1x(1'b0),
+	.inclk2x(clk_sys),
+	.inclk3x(clk_75),
+	.outclk(clk_out)
+);
+
+assign clkselect = |screenmode ? 2'b11 : 2'b10;
+
+//assign clk_out = |screenmode ? clk_75   : clk_sys; // FIXME - replace this with an altclkctrl or suchlike
+assign pe_out =  |screenmode ? pe_out_sc : pe_out_sd;
+assign ppe_out = |screenmode ? pe_out_sc : ppe_out_sd;
+assign hb_out = bypass ? hb_in : hb_o;
+assign vb_out = bypass ? vb_in : vb_o;
+assign hs_out = bypass ? hs_in : hs_o;
+assign vs_out = bypass ? vs_in : vs_o;
 
 endmodule
 

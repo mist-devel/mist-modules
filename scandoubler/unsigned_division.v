@@ -1,21 +1,21 @@
 module unsigned_division #(
-	parameter widthlog2 = 8
+	parameter bitwidth = 32
 ) (
 	input clk,
 	input reset_n,
-	input [widthlog2-1:0] dividend,
-	input [widthlog2-1:0] divisor,
-	output reg [widthlog2-1:0] quotient,
-	output reg [widthlog2-1:0] remainder,
+	input [bitwidth-1:0] dividend,
+	input [bitwidth-1:0] divisor,
+	output reg [bitwidth-1:0] quotient,
+	output reg [bitwidth-1:0] remainder,
 	input req,
 	output reg ack
 );
 
 reg ack_int;
-reg [widthlog2-1:0] bitcounter;
-reg [widthlog2-1:0] quot;
-reg [widthlog2-1:0] div;
-reg [widthlog2-1:0] remain;
+reg [bitwidth-1:0] bitcounter;
+reg [bitwidth-1:0] quot;
+reg [bitwidth-1:0] div;
+reg [bitwidth-1:0] remain;
 
 localparam IDLE=0;
 localparam RUN=1;
@@ -37,20 +37,20 @@ always @(posedge clk) begin
 					quot<=dividend;
 					div<=divisor;
 					/* verilator lint_off WIDTH */
-					bitcounter<=(widthlog2-1'd1);
+					bitcounter<=(bitwidth-1);
 					/* verilator lint_on WIDTH */
 					state <= RUN;
 				end			
 			end
 			
 			RUN : begin
-				if (remain[widthlog2-1])
-					remain={remain[widthlog2-1-1:0],quot[widthlog2-1]} + div;
+				if (remain[bitwidth-1])
+					remain={remain[bitwidth-1-1:0],quot[bitwidth-1]} + div;
 				else
-					remain={remain[widthlog2-1-1:0],quot[widthlog2-1]} - div;
+					remain={remain[bitwidth-1-1:0],quot[bitwidth-1]} - div;
 
-				quot[widthlog2-1:1]<=quot[widthlog2-1-1:0];
-				quot[0]<=~remain[widthlog2-1];
+				quot[bitwidth-1:1]<=quot[bitwidth-1-1:0];
+				quot[0]<=~remain[bitwidth-1];
 
 				if(|bitcounter)
 					bitcounter<=bitcounter-1'b1;
@@ -59,7 +59,7 @@ always @(posedge clk) begin
 			end
 			
 			FINALISE : begin
-				if (remain[widthlog2-1])
+				if (remain[bitwidth-1])
 					remainder<=remain+div;
 				else
 					remainder<=remain;
