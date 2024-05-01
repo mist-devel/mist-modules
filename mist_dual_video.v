@@ -129,7 +129,7 @@ wire  [1:0] vidout_frame;
 scandoubler #(SD_HCNT_WIDTH, COLOR_DEPTH, SD_HSCNT_WIDTH, 8) scandoubler
 (
 	.clk_sys    ( clk_sys    ),
-	.bypass     ( 1'b0       ),
+	.bypass     ( rotateonly ),
 	.rotateonly ( rotateonly ),
 	.ce_divider ( ce_divider ),
 	.scanlines  ( scanlines  ),
@@ -230,10 +230,10 @@ scandoubler_scaledepth #(COLOR_DEPTH, OUT_COLOR_DEPTH) vga_scaledepth_g(G, SCALE
 scandoubler_scaledepth #(COLOR_DEPTH, OUT_COLOR_DEPTH) vga_scaledepth_b(B, SCALED_B_O);
 
 wire use_sd = !scandoubler_disable | (rotate_screen != 0 & rotateonly);
-wire blank = HBlank | VBlank;
-wire [OUT_COLOR_DEPTH-1:0] vga_r_in = !use_sd ? (blank ? {OUT_COLOR_DEPTH{1'b0}} : SCALED_R_O) : SD_SCALED_R_O;
-wire [OUT_COLOR_DEPTH-1:0] vga_g_in = !use_sd ? (blank ? {OUT_COLOR_DEPTH{1'b0}} : SCALED_G_O) : SD_SCALED_G_O;
-wire [OUT_COLOR_DEPTH-1:0] vga_b_in = !use_sd ? (blank ? {OUT_COLOR_DEPTH{1'b0}} : SCALED_B_O) : SD_SCALED_B_O;
+wire blank_in = HBlank | VBlank;
+wire [OUT_COLOR_DEPTH-1:0] vga_r_in = !use_sd ? (blank_in ? {OUT_COLOR_DEPTH{1'b0}} : SCALED_R_O) : SD_SCALED_R_O;
+wire [OUT_COLOR_DEPTH-1:0] vga_g_in = !use_sd ? (blank_in ? {OUT_COLOR_DEPTH{1'b0}} : SCALED_G_O) : SD_SCALED_G_O;
+wire [OUT_COLOR_DEPTH-1:0] vga_b_in = !use_sd ? (blank_in ? {OUT_COLOR_DEPTH{1'b0}} : SCALED_B_O) : SD_SCALED_B_O;
 wire vga_hs_in = !use_sd ? HSync  : SD_HS_O;
 wire vga_vs_in = !use_sd ? VSync  : SD_VS_O;
 wire vga_hb_in = !use_sd ? HBlank : SD_HB_O;
@@ -333,7 +333,6 @@ always @(posedge clk_sys) begin
 end
 
 /////////////////////////// HDMI OUTPUT ///////////////////////////
-
 wire [7:0] hdmi_osd_r_o;
 wire [7:0] hdmi_osd_g_o;
 wire [7:0] hdmi_osd_b_o;
