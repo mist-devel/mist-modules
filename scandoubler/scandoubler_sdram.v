@@ -143,6 +143,7 @@ reg       vidwrite;
 reg       vidwrite_next;
 
 reg       vidread;
+reg       vidread_extend; // One row contains sixteen pixels, so could extend a burst.
 
 assign vidin_ack = vidwrite_next;
 
@@ -151,6 +152,10 @@ assign sd_data=drive_dq ? sd_data_reg : 16'bZZZZZZZZZZZZZZZZ;
 reg clk_8_enD;
 
 assign ready = |reset ? 1'b0 : ~init;
+
+wire rom_req = rom_oe && (addr_latch != rom_addr);
+
+wire portswaiting = rom_req | (port1_req ^ port1_ack) | vidin_req;
 
 always @(posedge clk_96) begin
 	// permanently latch ram data to reduce delays
@@ -164,6 +169,8 @@ always @(posedge clk_96) begin
 		if (t == STATE_VIDWRITEEND)
 			t <= STATE_FIRST;
 	end else if (vidread) begin	
+		if ((t == STATE_READ+7) && vidread_extend)
+			t <= STATE_READ;
 		if (t == STATE_VIDREADEND)
 			t <= STATE_FIRST;
 	end else
@@ -199,6 +206,7 @@ always @(posedge clk_96) begin
 			req_latch <=1'b0;
 			vidwrite<=1'b0;
 			vidread<=1'b0;
+			vidread_extend<=1'b0;
 			if (port1_req != port1_ack) begin // Upload gets first priority
 				addr_latch <= port1_addr;
 				req_latch <= 1;
@@ -210,7 +218,7 @@ always @(posedge clk_96) begin
 				sd_cmd <= CMD_ACTIVE;
 				sd_addr <= port1_addr[21:9];
 				sd_ba <= {1'b0,port1_addr[22]};
-			end else if (rom_oe && (addr_latch != rom_addr)) begin // ROM reads are next
+			end else if (rom_req) begin // ROM reads are next
 				addr_latch <= rom_addr;
 				req_latch <= 1;
 				rom_port <= 1;
@@ -291,11 +299,29 @@ always @(posedge clk_96) begin
 			if(t == STATE_CMD_CONT) begin
 				sd_dqm <= 2'b00;
 				sd_addr[12:11] <= 2'b00;
-				sd_addr[10] <= 1'b1; // Auto precharge
+				sd_addr[10] <= 1'b0; // Don't auto precharge
 				sd_addr[9:0] <= {vidout_x[10],vidout_y[4:0],vidout_x[3],3'b0};
 				sd_cmd <= CMD_READ;
+				vidread_extend <= ~vidout_x[3]; // Can we extend the transaction if the other ports aren't waiting?
 //				$display("vidread  (%t) column %h", $time, {1'b0,vidout_y[2:0],vidout_x[5:0]});
 			end
+
+			if(t==STATE_READ+6-{2'b0,CAS_LATENCY}) begin
+				sd_addr[10] <= 1'b0;
+				
+				if(vidout_req && vidread_extend && !portswaiting) begin
+					sd_addr[12:11] <= 2'b00;
+					sd_addr[10] <= 1'b0; // Don't auto precharge
+					sd_addr[9:0] <= {vidout_x[10],vidout_y[4:0],1'b1,3'b0};
+					sd_cmd <= CMD_READ;
+				end else begin
+					vidread_extend<=1'b0;
+					sd_cmd <= CMD_PRECHARGE;
+				end
+			end
+			
+			if(t==STATE_READ+7)
+				vidread_extend<=1'b0;
 			
 			if(t>=STATE_READ && t<(STATE_READ+8)) begin
 				vidout_q<=sd_din;

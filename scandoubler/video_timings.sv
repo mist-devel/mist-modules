@@ -101,7 +101,7 @@ always @(posedge clk) begin
 
 			if (hcounter==timings.htotal) begin // New row
 				hb_internal<=1'b1;
-				hcounter<=0;
+				hcounter<=1;
 			end
 			
 			// Vertical counters
@@ -120,7 +120,7 @@ always @(posedge clk) begin
 			
 			if (hcounter==timings.hsstop && vcounter==timings.vtotal) begin // New frame
 				vb_internal<=1'b1;
-				vcounter<=0;
+				vcounter<=1;
 				frame_stb<=1'b1; // A new frame is imminent.
 			end
 			

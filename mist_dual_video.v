@@ -104,6 +104,7 @@ parameter SD_HSCNT_WIDTH = 12;
 parameter OUT_COLOR_DEPTH = 6;  // 1-8
 parameter BIG_OSD = 1'b0;       // 16 line OSD
 parameter VIDEO_CLEANER = 1'b0; // Align VSync/VBlank to HSync/HBlank edges. HDMI usually needs it.
+parameter USE_SCALER = 1'b0;
 
 wire  [7:0] SD_R_O;
 wire  [7:0] SD_G_O;
@@ -130,11 +131,11 @@ wire [10:0] vidout_y;
 wire [15:0] vidout_d;
 wire [1:0]  vidout_frame;
 
-scandoubler #(SD_HCNT_WIDTH, COLOR_DEPTH, SD_HSCNT_WIDTH, 8) scandoubler
+scandoubler #(SD_HCNT_WIDTH, COLOR_DEPTH, SD_HSCNT_WIDTH, 8, USE_SCALER ) scandoubler
 (
 	.clk_sys    ( clk_sys    ),
 	.clk_75     ( clk_75     ),
-	.bypass     ( 1'b0       ),
+	.bypass     ( scandoubler_disable),
 	.ce_divider ( ce_divider ),
 	.scanlines  ( scanlines  ),
 	.rotation   ( rotate_screen  ),
@@ -232,18 +233,30 @@ scandoubler_scaledepth #(8, OUT_COLOR_DEPTH) vga_scaledepth_sd_r(SD_R_O, SD_SCAL
 scandoubler_scaledepth #(8, OUT_COLOR_DEPTH) vga_scaledepth_sd_g(SD_G_O, SD_SCALED_G_O);
 scandoubler_scaledepth #(8, OUT_COLOR_DEPTH) vga_scaledepth_sd_b(SD_B_O, SD_SCALED_B_O);
 
-scandoubler_scaledepth #(COLOR_DEPTH, OUT_COLOR_DEPTH) vga_scaledepth_r(R, SCALED_R_O);
-scandoubler_scaledepth #(COLOR_DEPTH, OUT_COLOR_DEPTH) vga_scaledepth_g(G, SCALED_G_O);
-scandoubler_scaledepth #(COLOR_DEPTH, OUT_COLOR_DEPTH) vga_scaledepth_b(B, SCALED_B_O);
+//scandoubler_scaledepth #(COLOR_DEPTH, OUT_COLOR_DEPTH) vga_scaledepth_r(R, SCALED_R_O);
+//scandoubler_scaledepth #(COLOR_DEPTH, OUT_COLOR_DEPTH) vga_scaledepth_g(G, SCALED_G_O);
+//scandoubler_scaledepth #(COLOR_DEPTH, OUT_COLOR_DEPTH) vga_scaledepth_b(B, SCALED_B_O);
 
-wire [OUT_COLOR_DEPTH-1:0] vga_r_in = scandoubler_disable ? SCALED_R_O : SD_SCALED_R_O;
-wire [OUT_COLOR_DEPTH-1:0] vga_g_in = scandoubler_disable ? SCALED_G_O : SD_SCALED_G_O;
-wire [OUT_COLOR_DEPTH-1:0] vga_b_in = scandoubler_disable ? SCALED_B_O : SD_SCALED_B_O;
-wire vga_hs_in = scandoubler_disable ? HSync  : SD_HS_O;
-wire vga_vs_in = scandoubler_disable ? VSync  : SD_VS_O;
-wire vga_hb_in = scandoubler_disable ? HBlank : SD_HB_O;
-wire vga_vb_in = scandoubler_disable ? VBlank : SD_VB_O;
-wire vga_pixel_ena = scandoubler_disable ? pixel_ena_x1 : pixel_ena_x2;
+wire use_sd = !scandoubler_disable | (rotate_screen != 0);
+wire blank_in = HBlank | VBlank;
+
+wire [OUT_COLOR_DEPTH-1:0] vga_r_in = SD_SCALED_R_O;
+wire [OUT_COLOR_DEPTH-1:0] vga_g_in = SD_SCALED_G_O;
+wire [OUT_COLOR_DEPTH-1:0] vga_b_in = SD_SCALED_B_O;
+wire vga_hs_in = SD_HS_O;
+wire vga_vs_in = SD_VS_O;
+wire vga_hb_in = SD_HB_O;
+wire vga_vb_in = SD_VB_O;
+wire vga_pixel_ena = use_sd ? pixel_ena_x2 : pixel_ena_x1;
+
+//wire [OUT_COLOR_DEPTH-1:0] vga_r_in = use_sd ? SD_SCALED_R_O : (blank_in ? {OUT_COLOR_DEPTH{1'b0}} : SCALED_R_O);
+//wire [OUT_COLOR_DEPTH-1:0] vga_g_in = use_sd ? SD_SCALED_G_O : (blank_in ? {OUT_COLOR_DEPTH{1'b0}} : SCALED_G_O);
+//wire [OUT_COLOR_DEPTH-1:0] vga_b_in = use_sd ? SD_SCALED_B_O : (blank_in ? {OUT_COLOR_DEPTH{1'b0}} : SCALED_B_O);
+//wire vga_hs_in = use_sd ? SD_HS_O : HSync;
+//wire vga_vs_in = use_sd ? SD_VS_O : VSync;
+//wire vga_hb_in = use_sd ? SD_HB_O : HBlank;
+//wire vga_vb_in = use_sd ? SD_VB_O : VBlank;
+//wire vga_pixel_ena = use_sd ? pixel_ena_x2 : pixel_ena_x1;
 
 wire [OUT_COLOR_DEPTH-1:0] vga_osd_r_o;
 wire [OUT_COLOR_DEPTH-1:0] vga_osd_g_o;

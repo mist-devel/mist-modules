@@ -46,25 +46,30 @@ reg [bitwidth+fracwidth-1:0] limit_out_fp;
 always @(posedge clk) begin
 	step_out<=1'b0;
 	if (step_in) begin
-		if(dpos>spos_whole) begin
+		if(dpos>spos_whole && !(|offset)) begin
 			spos<=spos+step;
 			fraction<=spos_frac;
 			step_out<=1'b1;
-			whole_i<=whole_i+1;
+			whole_i<=whole_i+(dpos-spos_whole);
 		end else
 			fraction<=0;
+			
 		if(|offset)
 			offset<=offset-1;
-		else
-			dpos<=dpos+1'b1;
+		else begin
+			if((dpos-spos_whole)<2)
+				dpos<=dpos+1'b1;
+		end
 	end
+	
 	if (newfraction || reset_n)
 		ready <= 1'b0;
 
-	if (|centre_offset && whole_i>limit) // HACK: Extend the span by one pixel when processing rows.
-		offset<={bitwidth{1'b1}}; // Ensure the rest of the span is blanked
+//	if (|centre_offset && whole_i>limit) // HACK: Extend the span by one pixel when processing rows.
+//		offset<={bitwidth{1'b1}}; // Ensure the rest of the span is blanked
 
-	if (!(|centre_offset) && whole_i==limit)
+//	if (!(|centre_offset) && whole_i>=limit)
+	if (whole_i>=limit)
 		offset<={bitwidth{1'b1}}; // Ensure the rest of the span is blanked
 
 	if (step_reset || newfraction || !reset_n) begin

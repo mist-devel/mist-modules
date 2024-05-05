@@ -89,6 +89,7 @@ parameter HCNT_WIDTH = 10; // Resolution of scandoubler buffer
 parameter COLOR_DEPTH = 6; // Bits per colour to be stored in the buffer
 parameter HSCNT_WIDTH = 12; // Resolution of hsync counters
 parameter OUT_COLOR_DEPTH = 6; // Bits per color outputted
+parameter USE_SCALER = 1'b0;
 
 // --------------------- create output signals -----------------
 
@@ -181,7 +182,7 @@ scandoubler_rotate #(
 
 	.hb_sd(hb_o),
 	.vb_sd(vb_o),
-	.vs_sd(vs_o),
+	.vs_sd(vs_inverted),
 	.r_out(r_rot),
 	.g_out(g_rot),
 	.b_out(b_rot),
@@ -201,7 +202,7 @@ scandoubler_rotate #(
 	.vidout_x(vidout_x)
 );
 
-wire userotscale = (|rotation || |screenmode) && !bypass;
+wire userotscale = (|rotation || |screenmode);
 
 assign r = userotscale ? r_rot : r_ld;
 assign g = userotscale ? g_rot : g_ld;
@@ -285,35 +286,42 @@ assign ppe_out_sc = pe_out_sc;
 
 reg hs_o, vs_o;
 reg hb_o, vb_o;
+reg vs_inverted;
 
 always @(posedge clk_out) begin
 	if(pe_out) begin
-		hs_o <= |screenmode ? hs_sc : hs_sd;
-		vs_o <= |screenmode ? vs_sc : vs_sd;
-		hb_o <= |screenmode ? ~hb_sc : hb_sd;
-		vb_o <= |screenmode ? ~vb_sc : vb_sd;
+		hs_o <= |screenmode ?  hs_sc : (bypass ? hs_in : hs_sd);
+		vs_o <= |screenmode ?  vs_sc : (bypass ? vs_in : vs_sd);
+		hb_o <= |screenmode ? ~hb_sc : (bypass ? hb_in : hb_sd);
+		vb_o <= |screenmode ? ~vb_sc : (bypass ? vb_in : vb_sd);
 	end
 end
+assign vs_inverted = vs_o ^ (timings.vpolarity & |screenmode);
 
-wire [1:0] clkselect;
-scandoubler_clkctrl (
-	.clkselect(clkselect),
-	.inclk0x(1'b0),
-	.inclk1x(1'b0),
-	.inclk2x(clk_sys),
-	.inclk3x(clk_75),
-	.outclk(clk_out)
-);
+generate
+	if (USE_SCALER ) begin
+		wire [1:0] clkselect;
+		scandoubler_clkctrl (
+			.clkselect(clkselect),
+			.inclk0x(1'b0),
+			.inclk1x(1'b0),
+			.inclk2x(clk_sys),
+			.inclk3x(clk_75),
+			.outclk(clk_out)
+		);
 
-assign clkselect = |screenmode ? 2'b11 : 2'b10;
+		assign clkselect = |screenmode ? 2'b11 : 2'b10;
+	end else begin
+		assign clk_out = clk_sys;
+	end
+endgenerate
 
-//assign clk_out = |screenmode ? clk_75   : clk_sys; // FIXME - replace this with an altclkctrl or suchlike
 assign pe_out =  |screenmode ? pe_out_sc : pe_out_sd;
 assign ppe_out = |screenmode ? pe_out_sc : ppe_out_sd;
-assign hb_out = bypass ? hb_in : hb_o;
-assign vb_out = bypass ? vb_in : vb_o;
-assign hs_out = bypass ? hs_in : hs_o;
-assign vs_out = bypass ? vs_in : vs_o;
+assign hb_out = (bypass && !(|screenmode)) ? hb_in : hb_o;
+assign vb_out = (bypass && !(|screenmode)) ? vb_in : vb_o;
+assign hs_out = (bypass && !(|screenmode)) ? hs_in : hs_o;
+assign vs_out = (bypass && !(|screenmode)) ? vs_in : vs_o;
 
 endmodule
 

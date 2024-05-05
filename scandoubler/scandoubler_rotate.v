@@ -117,7 +117,7 @@ always @(posedge clk_sys) if (pe_in) begin
 	if(!vb_d && vb_in) begin
 		outputframe_next<=inputframe;
 		inputframe<=inputframe+1'b1;
-		in_ypos_max<=in_ypos-1'b1;
+		in_ypos_max<=in_ypos-1;
 	end
 end
 
@@ -126,7 +126,7 @@ always @(posedge clk_sys) if (pe_in) begin
 	if(vb_in)
 		in_ypos<=0;
 	else if(!hb_in_d && hb_in)	begin // Increment row on hblank
-		in_ypos<=in_ypos+11'd1;
+		in_ypos<=in_ypos+1;
 		in_xpos_max <= in_xpos;
 	end
 end
@@ -135,7 +135,7 @@ always @(posedge clk_sys) if (pe_in) begin
 	if(hb_in && rowwptr[3:0] == 0)
 		in_xpos<=0;
 	else if (!hb_in)
-		in_xpos<=in_xpos+11'd1;	// Increment column on pixel enable
+		in_xpos<=in_xpos+1;	// Increment column on pixel enable
 end
 
 // Buffer incoming video data and write to SDRAM.
@@ -215,8 +215,8 @@ reg vs_sd_stb;
 
 reg [HSCNT_WIDTH-1:0] sd_xpos;
 reg [HSCNT_WIDTH-1:0] sd_ypos;
-reg [HSCNT_WIDTH-1:0] out_xpos_max;
-reg [HSCNT_WIDTH-1:0] out_ypos_max;
+reg [HSCNT_WIDTH-1:0] out_xpos_max = 641;
+reg [HSCNT_WIDTH-1:0] out_ypos_max = 481;
 
 always @(posedge clk_dst) begin
 	hb_sd_d<=hb_sd;
@@ -280,7 +280,7 @@ reg [HCNT_WIDTH-1:0] scale_den;
 reg [HCNT_WIDTH-1:0] scale_hlimit;
 reg [HCNT_WIDTH-1:0] scale_vlimit;
 
-assign scale_num=out_ypos_max;
+assign scale_num=out_ypos_max[HCNT_WIDTH-1:0];
 
 always @(posedge clk_sys) begin
 	case (rotation)
@@ -301,6 +301,7 @@ frac_interp #(.bitwidth(HCNT_WIDTH),.fracwidth(vi_fracwidth)) interp_core_v (
 	.num(scale_num),
 	.den(scale_den),
 	.limit(scale_vlimit),
+	.limit_out(),
 	.newfraction(vs_sd_stb),
 	.ready(vi_ready),
 	.step_reset(vs_sd_stb),
@@ -348,11 +349,11 @@ always @(posedge clk_sys) begin
 		vidout_frame<=outputframe_next;
 	end
 
-	if(fetch && fetch_xpos==scale_hlimit)
+	if(vidout_ack && fetch_xpos[HCNT_WIDTH-1:3] == scale_hlimit[HCNT_WIDTH-1:3])
 		fetch<=1'b0;
 
 	if(vidout_ack) begin
-		fetch_xpos<=fetch_xpos+11'd1;
+		fetch_xpos<=fetch_xpos+1;
 		if(fetchbuffer)
 			linebuffer1[fetch_xpos]<=vidout_d;
 		else
@@ -381,7 +382,7 @@ reg [HSCNT_WIDTH-1:0] centre_offset;
 wire [HCNT_WIDTH-1:0] limit_out;
 
 always @(posedge clk_dst) begin
-	centre_offset<={1'b0,out_xpos_max[HSCNT_WIDTH-1:1]}-{1'b0,limit_out[HCNT_WIDTH-1:1]};
+	centre_offset<={1'b0,out_xpos_max[HSCNT_WIDTH-1:1]}-{{HSCNT_WIDTH-HCNT_WIDTH{1'b0}},limit_out[HCNT_WIDTH-1:1]};
 end
 
 frac_interp #(.bitwidth(HCNT_WIDTH),.fracwidth(hi_fracwidth)) interp_core_h (
@@ -396,7 +397,7 @@ frac_interp #(.bitwidth(HCNT_WIDTH),.fracwidth(hi_fracwidth)) interp_core_h (
 	.step_reset(hb_sd_stb),
 	.step_in(!hb_sd && ppe_out),
 	.step_offset(16'h0),
-	.centre_offset(centre_offset[HSCNT_WIDTH-1] ? 0 : centre_offset), // FIXME - if the scaled picture is wider than the screen, can we pan?
+	.centre_offset(centre_offset[HSCNT_WIDTH-1] ? 0 : centre_offset[HCNT_WIDTH-1:0]), // FIXME - if the scaled picture is wider than the screen, can we pan?
 	.step_out(hi_step),
 	.whole(hi_whole),
 	.fraction(hi_fraction),
@@ -415,7 +416,11 @@ wire [15:0] final_rgb565;
 
 reg [2:0] hi_blank_d;
 
+reg downscale;
+
 always @(posedge clk_dst) begin
+	downscale = scale_num<scale_den ? 1'b1 : 1'b0;
+
 	hi_blank_d<= {hi_blank_d[1:0],hi_blank};
 
 	if(fetchbuffer) begin
@@ -428,13 +433,25 @@ always @(posedge clk_dst) begin
 	if (hi_whole > scale_hlimit) {row1_pix1, row2_pix1} <= 0;
 
 	if(hi_step) begin
-		row1_pix2<=row1_pix1;
-		row2_pix2<=row2_pix1;
+		if(downscale) begin
+			if (fetchbuffer) begin
+				row1_pix2 <= row2_pix1;
+				row2_pix2 <= row2_pix1;
+			end	else begin
+				row1_pix2 <= row1_pix1;
+				row2_pix2 <= row1_pix1;
+			end
+		end	else begin
+			row1_pix2<=row1_pix1;
+			row2_pix2<=row2_pix1;
+		end
+//		row1_pix2<=row1_pix1;
+//		row2_pix2<=row2_pix1;
 	end
 end
 
-wire [7:0] hfilter_fraction = hfilter ? hi_fraction[15:8] : 8'h00;
-wire [7:0] vfilter_fraction = vfilter ? vi_fraction[15:8] : 8'h00;
+wire [7:0] hfilter_fraction = (hfilter & ~downscale) ? hi_fraction[15:8] : 8'h00;
+wire [7:0] vfilter_fraction = (vfilter & ~downscale) ? vi_fraction[15:8] : 8'h00;
 
 scandoubler_rgb_interp rgbinterp_h1
 (
