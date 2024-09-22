@@ -137,8 +137,8 @@ assign scandoubler_disable = but_sw[4];
 assign ypbpr = but_sw[5];
 assign no_csync = but_sw[6];
 
-assign conf_addr = byte_cnt + conf_offset - (cmd == 8'h24 ? 2'd3 : 2'd0);
 reg [10:0] conf_offset = 0;
+assign conf_addr = byte_cnt + conf_offset;
 
 // bit 4 indicates ROM direct upload capability
 wire [7:0] core_type = ARCHIE ? 8'ha6 : ROM_DIRECT_UPLOAD ? 8'hb4 : 8'ha4;
@@ -325,7 +325,7 @@ always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 			// reading config string with offset
 			8'h24: if(byte_cnt == 0) spi_byte_out <= 8'hAA; else // indicating the command is supported
 			       if (STRLEN == 0) spi_byte_out <= conf_chr; else
-			       if((byte_cnt + conf_offset - 2'd3) < STRLEN) spi_byte_out <= conf_str[(STRLEN - (byte_cnt + conf_offset - 2'd3) - 1)<<3 +:8];
+			       if(conf_addr < STRLEN) spi_byte_out <= conf_str[(STRLEN - conf_addr - 1)<<3 +:8];
 
 			// reading sd card status
 			8'h16: if(byte_cnt == 0) begin
@@ -544,7 +544,7 @@ always @(posedge clk_sys) begin : cmd_block
 
 				// get_conf_str_ext
 				8'h24: if(abyte_cnt == 1) conf_offset[7:0] <= spi_byte_in;
-				       else if (abyte_cnt == 2) conf_offset[10:8] <= spi_byte_in[2:0];
+				       else if (abyte_cnt == 2) conf_offset <= {spi_byte_in[2:0], conf_offset[7:0]} - 2'd3;
 
 				// I2C bridge
 				8'h30: if(abyte_cnt == 1) {i2c_addr, i2c_read} <= spi_byte_in;
