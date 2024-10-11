@@ -531,7 +531,7 @@ always @(posedge clk_sys) begin : cmd_block
 					end
 				end
 
-				8'h15: status <= spi_byte_in;
+				8'h15: status[7:0] <= spi_byte_in;
 
 				// status, 64bit version
 				8'h1e: if(abyte_cnt<9) status[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
