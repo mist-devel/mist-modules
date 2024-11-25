@@ -90,6 +90,8 @@ module user_io (
 	input         [7:0] kbd_out_data,   // for Archie
 	input               kbd_out_strobe,
 
+	input         [7:0] leds,
+
 	// mouse data
 	output reg    [8:0] mouse_x,
 	output reg    [8:0] mouse_y,
@@ -345,6 +347,9 @@ always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 				// send alternating flag byte and data
 				if(byte_cnt[0]) spi_byte_out <= serial_out_status;
 				else spi_byte_out <= serial_out_byte;
+
+			// keyboard LED status
+			8'h1f: spi_byte_out <= leds;
 
 			// core features
 			8'h80:
