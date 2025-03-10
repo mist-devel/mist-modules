@@ -65,7 +65,8 @@ module ide
 	input          hdd_wr,
 	input          hdd_status_wr,
 	input          hdd_data_wr,
-	input          hdd_data_rd
+	input          hdd_data_rd,
+	output     reg hdd_step
 );
 
 localparam VCC = 1'b1;
@@ -108,6 +109,8 @@ reg		busy;       // busy status (command processing state)
 reg		pio_in;     // pio in command type is being processed
 reg		pio_out;    // pio out command type is being processed
 reg		error;      // error status (command processing failed)
+reg		read_mult;  // READ MULTIPLE command in progress
+reg		read_mult_ready;
 
 reg   [1:0] dev;  // drive select (Primary/Secondary, Master/Slave)
 wire 	bsy;        // busy
@@ -149,9 +152,11 @@ reg [2:0] dbg_addr /* synthesis noprune */;
 reg       dbg_wr /* synthesis noprune */;
 reg[15:0] dbg_data_in /* synthesis noprune */;
 reg[15:0] dbg_data_out /* synthesis noprune */;
+reg [7:0] dbg_hdd_status /* synthesis noprune */;
 
 always @(posedge clk) begin
 	status_dbg <= status;
+	if (hdd_status_wr) dbg_hdd_status <= hdd_data_out;
 	if (clk_en) begin
 		dbg_wr <= 0;
 		if (sel_command) // set when the CPU writes command register
@@ -310,6 +315,24 @@ always @(posedge clk)
 		end
 	end
 
+// Special DRQ handling for READ MULTIPLE
+always @(posedge clk)
+	if (clk_en) begin
+		if (reset) begin
+			read_mult <= 0;
+			read_mult_ready <= 0;
+		end else begin
+			if (sel_command) begin
+				read_mult <= data_in[15:8] == 8'hC4;
+				read_mult_ready <= 0;
+			end
+			if (hdd_status_wr & (hdd_data_out[3] | hdd_data_out[7]))
+				read_mult_ready <= read_mult;
+			if (fifo_empty)
+				read_mult_ready <= 0;
+		end
+	end
+
 // pio in command type
 always @(posedge clk)
 	if (clk_en) begin
@@ -346,7 +369,7 @@ always @(posedge clk)
 			                packet_state == PACKET_WAITCMD ? PACKET_PROCESSCMD : packet_state;
 	end
 
-assign drq = (fifo_full & pio_in) | (~fifo_full & pio_out & (sector_count != 0 || packet_out)); // HDD data request status bit
+assign drq = (read_mult_ready & pio_in & read_mult) | (fifo_full & pio_in & ~read_mult) | (~fifo_full & pio_out & (sector_count != 0 || packet_out)); // HDD data request status bit
 
 // error status
 always @(posedge clk)
@@ -399,6 +422,22 @@ assign data_oe = (!dev[1] && hdd0_ena[dev[0]]) || (dev[1] && hdd1_ena[dev[0]]);
 assign data_out = sel_fifo && rd ? fifo_data_out  :
                   sel_status ? data_oe ? {status,8'h00} : 16'h00_00 :
                   sel_tfr && rd ? {tfr_out,8'h00} : 16'h00_00;
+
+// Monitor changes to cylinder number for drive sounds
+reg [7:0] cyllow;
+reg [7:0] cyllow_prev;
+always @(posedge clk) begin
+	hdd_step<=1'b0;
+	if (clk_en) begin
+		if (hwr && sel_tfr && address_in == 3'b100) // cyllow register loaded by the host
+			cyllow <= data_in[15:8];
+		if (sel_command) begin
+			if(cyllow_prev!=cyllow)
+				hdd_step <=1'b1;
+			cyllow_prev<=cyllow;
+		end
+	end
+end
 
 //===============================================================================================//
 

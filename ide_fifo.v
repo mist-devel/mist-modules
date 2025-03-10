@@ -40,7 +40,7 @@ always @(posedge clk)
 	end
 
 always @(posedge clk)
-	if (clk_en)
+	if (clk_en && !rd) // AMR - Hold output until rd is released
 		data_out <= mem[outptr[11:0]];
 
 // fifo write pointer control
@@ -57,7 +57,7 @@ always @(posedge clk)
 	if (clk_en) begin
 		if (reset)
 			outptr <= 0;
-		else if (rd_old & ~rd)
+		else if (rd & ~rd_old) // AMR - increment outptr immediately on rd
 			outptr <= outptr + 1'd1;
 	end
 
