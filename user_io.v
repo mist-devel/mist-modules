@@ -48,7 +48,7 @@ module user_io (
 	output              ypbpr,
 	output              no_csync,
 	output reg   [63:0] status,
-	output reg    [6:0] core_mod, // core variant, sent before the config string is requested
+	output reg   [62:0] core_mod, // core variant, sent before the config string is requested
 	// RTC data from IO controller
 	// sec, min, hour, date, month, year, day (BCD)
 	output reg   [63:0] rtc,
@@ -542,7 +542,10 @@ always @(posedge clk_sys) begin : cmd_block
 				8'h1e: if(abyte_cnt<9) status[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
 
 				// core variant
-				8'h21: core_mod <= spi_byte_in[6:0];
+				8'h21: core_mod[6:0] <= spi_byte_in[6:0];
+
+				// core variant, 64bit version
+				8'h25: if(abyte_cnt<9) core_mod[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
 
 				// RTC
 				8'h22: if(abyte_cnt<9) rtc[(abyte_cnt-1)<<3 +:8] <= spi_byte_in;
