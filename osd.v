@@ -26,7 +26,9 @@ module osd (
 	// VGA signals going to video connector
 	output [OUT_COLOR_DEPTH-1:0] R_out,
 	output [OUT_COLOR_DEPTH-1:0] G_out,
-	output [OUT_COLOR_DEPTH-1:0] B_out
+	output [OUT_COLOR_DEPTH-1:0] B_out,
+    
+	output reg osd_enable
 );
 
 parameter OSD_X_OFFSET = 11'd0;
@@ -49,7 +51,6 @@ localparam OSD_WIDTH_PADDED = OSD_WIDTH + (OSD_WIDTH >> 1);  // 25% padding left
 
 // this core supports only the display related OSD commands
 // of the minimig
-reg        osd_enable;
 (* ramstyle = "no_rw_check" *) reg  [7:0] osd_buffer[256*OSD_LINES-1:0];  // the OSD buffer itself
 
 // the OSD has its own SPI interface to the io controller

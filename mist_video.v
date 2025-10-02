@@ -40,6 +40,9 @@ module mist_video
 	input        HSync,
 	input        VSync,
 
+	// OSD on/off indicator
+	output       osd_enable,
+    
 	// MiST video output signals
 	output reg [OUT_COLOR_DEPTH-1:0] VGA_R,
 	output reg [OUT_COLOR_DEPTH-1:0] VGA_G,
@@ -118,7 +121,8 @@ osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE, USE_BLANKS, OUT_COLOR_
 	.VSync   ( SD_VS_O ),
 	.R_out   ( osd_r_o ),
 	.G_out   ( osd_g_o ),
-	.B_out   ( osd_b_o )
+	.B_out   ( osd_b_o ),
+	.osd_enable(osd_enable)
 );
 
 wire [OUT_COLOR_DEPTH-1:0] cofi_r, cofi_g, cofi_b;
