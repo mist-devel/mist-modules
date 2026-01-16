@@ -123,6 +123,7 @@ parameter PS2BIDIR=0; // bi-directional PS2 interface
 parameter FEATURES=0; // requested features from the firmware
 parameter ARCHIE=0;
 parameter SD_BLKSZ=1'b0; // blocksize = 512<<SD_BLKSZ
+parameter [2:0] SERIAL_CHANNEL=3'd0;
 
 localparam W = $clog2(SD_IMAGES);
 
@@ -218,7 +219,7 @@ reg [SERIAL_OUT_FIFO_BITS-1:0] serial_out_rptr;
  
 wire serial_out_data_available = serial_out_wptr != serial_out_rptr;
 wire [7:0] serial_out_byte = serial_out_fifo[serial_out_rptr] /* synthesis keep */;
-wire [7:0] serial_out_status = { 7'b1000000, serial_out_data_available};
+wire [7:0] serial_out_status = { 4'b1000, SERIAL_CHANNEL, serial_out_data_available};
 
 // status[0] is reset signal from io controller and is thus used to flush
 // the fifo
