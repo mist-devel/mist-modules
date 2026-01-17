@@ -346,7 +346,7 @@ always@(posedge spi_sck or posedge SPI_SS_IO) begin : spi_transmitter
 
 			8'h1b:
 				// send alternating flag byte and data
-				if(byte_cnt[0]) spi_byte_out <= serial_out_status;
+				if(~byte_cnt[0]) spi_byte_out <= serial_out_status;
 				else spi_byte_out <= serial_out_byte;
 
 			// keyboard LED status
